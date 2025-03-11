@@ -10,11 +10,11 @@ export default function ChaosPad() {
 		handleMove,
 		setRelease,
 		setReverbLevel,
-		release,  
+		release,
 		reverbLevel,
 	} = useChaosAudio()
 
-  useChaosWebSocket()
+	useChaosWebSocket()
 
 	return (
 		<div className='w-full h-screen bg-gradient-to-br from-black to-gray-900 text-white flex flex-col items-center justify-center select-none'>
