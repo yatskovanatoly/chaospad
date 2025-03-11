@@ -1,0 +1,1 @@
+export const WS_URL = '192.168.1.73:3003'
