@@ -1,9 +1,16 @@
+import { WS_URL } from '@/config'
 import { useEffect, useMemo, useRef } from 'react'
 
 export function useChaosWebSocket() {
 	const audioCtxRef = useRef<AudioContext | null>(null)
 	const wsRef = useRef<WebSocket | null>(null)
-	const userId = useMemo(() => crypto.randomUUID(), [])
+	const userId = useMemo(() => {
+		try {
+			return crypto?.randomUUID()
+		} catch (e) {
+			console.log(e)
+		}
+	}, [])
 	const remoteUsersRef = useRef<
 		Record<string, { osc: OscillatorNode; gain: GainNode }>
 	>({})
@@ -78,7 +85,7 @@ export function useChaosWebSocket() {
 	)
 
 	useEffect(() => {
-		const ws = new WebSocket('ws://localhost:3003')
+		const ws = new WebSocket(`ws://${WS_URL}`)
 		wsRef.current = ws
 
 		ws.onmessage = (event) => {

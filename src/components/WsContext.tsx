@@ -1,5 +1,6 @@
 'use client'
 
+import { WS_URL } from '@/config'
 // WebSocketContext.tsx
 import { createContext, useContext, useEffect, useRef } from 'react'
 
@@ -17,7 +18,7 @@ export const WebSocketProvider = ({
 	const wsRef = useRef<WebSocket | null>(null)
 
 	useEffect(() => {
-		const ws = new WebSocket('ws://localhost:3003')
+		const ws = new WebSocket(`ws://${WS_URL}`)
 		wsRef.current = ws
 
 		return () => ws.close()
