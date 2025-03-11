@@ -116,7 +116,7 @@ export function useChaosAudio() {
 			oscillatorRef.current = null
 			gainNodeRef.current = null
 			convolverRef.current = null
-		}, (release + 0.1) * 1000)
+		}, (release + 0.1) * 10000)
 		sendEvent('stop', 0, 0)
 		setIsActive(false)
 	}
