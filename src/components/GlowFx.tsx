@@ -16,7 +16,8 @@ const GlowEffect: React.FC<PropsWithChildren> = ({ children }) => {
 				'opacity-60',
 				'transition-all',
 				'pointer-events-none',
-				'ease-in-out'
+				'ease-in-out',
+        'blur-xs'
 			)
 			document.body.appendChild(glow)
 
@@ -27,7 +28,7 @@ const GlowEffect: React.FC<PropsWithChildren> = ({ children }) => {
 			glow.style.height = '50px'
 
 			// Add continuous animation while the user interacts
-			glow.style.animation = 'glow-effect .3s infinite'
+			glow.style.animation = 'glow-effect .5s infinite'
 
 			return glow
 		}
