@@ -16,7 +16,8 @@
 }
 
 body {
-	margin: 0;
+  margin: 0;
+	height: 100dvh;
 	overflow: hidden;
 	background-color: #222; /* To make the glowing effect stand out */
 }
