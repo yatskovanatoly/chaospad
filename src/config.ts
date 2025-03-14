@@ -1,1 +1,1 @@
-export const WS_URL = '192.168.1.73:3003'
+export const WS_URL = process.env.NEXT_PUBLIC_WS_URL
