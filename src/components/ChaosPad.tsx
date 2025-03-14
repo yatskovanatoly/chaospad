@@ -12,12 +12,14 @@ export default function ChaosPad() {
 		setReverbLevel,
 		release,
 		reverbLevel,
+		volume,
+		setVolume,
 	} = useChaosAudio()
 
 	useChaosWebSocket()
 
 	return (
-		<div className='w-full h-screen bg-gradient-to-br from-black to-gray-900 text-white flex flex-col items-center justify-center select-none'>
+		<div className='w-full h-screen bg-gradient-to-br text-black inverc from-pink-200 via-green-200 to-blue-200 flex flex-col items-center justify-center select-none'>
 			<div
 				className='w-full h-full flex-1'
 				onMouseDown={startAudio}
@@ -33,7 +35,7 @@ export default function ChaosPad() {
 				</div>
 			</div>
 
-			<div className='bg-black/80 w-full max-w-xl px-6 py-4 space-y-3 text-sm'>
+			<div className='w-full max-w-xl px-6 py-4 space-y-3 text-sm'>
 				<label className='block'>
 					Release: {release.toFixed(2)}s
 					<input
@@ -47,7 +49,7 @@ export default function ChaosPad() {
 					/>
 				</label>
 				<label className='block'>
-					Reverb: {reverbLevel.toFixed(2)}
+					Reverb: {Math.ceil(reverbLevel * 100)}%
 					<input
 						type='range'
 						min={0}
@@ -55,6 +57,18 @@ export default function ChaosPad() {
 						step={0.01}
 						value={reverbLevel}
 						onChange={(e) => setReverbLevel(parseFloat(e.target.value))}
+						className='w-full'
+					/>
+				</label>
+				<label className='block'>
+					Volume: {Math.ceil(volume * 100)}%
+					<input
+						type='range'
+						min={0}
+						max={1}
+						step={0.01}
+						value={volume}
+						onChange={(e) => setVolume(parseFloat(e.target.value))}
 						className='w-full'
 					/>
 				</label>

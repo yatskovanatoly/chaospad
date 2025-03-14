@@ -1,11 +1,12 @@
 'use client'
 
 import { WS_URL } from '@/config'
-// WebSocketContext.tsx
-import { createContext, useContext, useEffect, useRef } from 'react'
+import { createContext, RefObject, useContext, useEffect, useRef } from 'react'
 
 type WSContextType = {
+  wsRef: RefObject<WebSocket | null>
 	sendEvent: (type: 'start' | 'move' | 'stop', x: number, y: number) => void
+  userId: string | undefined
 }
 
 const WebSocketContext = createContext<WSContextType | null>(null)
@@ -16,6 +17,7 @@ export const WebSocketProvider = ({
 	children: React.ReactNode
 }) => {
 	const wsRef = useRef<WebSocket | null>(null)
+  const userId = getUserId()
 
 	useEffect(() => {
 		const ws = new WebSocket(`ws://${WS_URL}`)
@@ -26,12 +28,12 @@ export const WebSocketProvider = ({
 
 	const sendEvent = (type: 'start' | 'move' | 'stop', x: number, y: number) => {
 		if (wsRef.current?.readyState === WebSocket.OPEN) {
-			wsRef.current.send(JSON.stringify({ userId: 'your-user-id', type, x, y }))
+			wsRef.current.send(JSON.stringify({ userId: getUserId(), type, x, y }))
 		}
 	}
 
 	return (
-		<WebSocketContext.Provider value={{ sendEvent }}>
+		<WebSocketContext.Provider value={{ wsRef, sendEvent, userId }}>
 			{children}
 		</WebSocketContext.Provider>
 	)
@@ -42,4 +44,12 @@ export const useWebSocket = () => {
 	if (!ctx)
 		throw new Error('useWebSocket must be used inside WebSocketProvider')
 	return ctx
+}
+
+const getUserId = () => {
+	try {
+		return crypto.randomUUID()
+	} catch (e) {
+		console.log(e)
+	}
 }

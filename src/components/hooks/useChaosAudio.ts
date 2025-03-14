@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useWebSocket } from '../WsContext'
 
 export function useChaosAudio() {
@@ -7,11 +7,64 @@ export function useChaosAudio() {
 	const gainNodeRef = useRef<GainNode | null>(null)
 	const convolverRef = useRef<ConvolverNode | null>(null)
 	const [isActive, setIsActive] = useState(false)
-
 	const [release, setRelease] = useState(0.5)
 	const [reverbLevel, setReverbLevel] = useState(0.5)
-
+	const [volume, setVolume] = useState(1)
 	const { sendEvent } = useWebSocket()
+	const impulseResponseRef = useRef<AudioBuffer | null>(null)
+	const [type, setType] = useState<OscillatorType>('sine')
+
+	useEffect(() => {
+		const types: OscillatorType[] = ['sine', 'triangle']
+		setType(types[Math.floor(Math.random() * types.length)])
+	}, [])
+
+	const startAudio = (e: React.MouseEvent | React.TouchEvent) => {
+		if (!audioCtxRef.current) {
+			audioCtxRef.current = new window.AudioContext()
+		}
+
+		const ctx = audioCtxRef.current
+
+		const oscillator = ctx.createOscillator()
+		const gainNode = ctx.createGain()
+		const convolver = ctx.createConvolver()
+		const convolverGain = ctx.createGain()
+		const masterGain = ctx.createGain()
+
+		convolver.buffer = getImpulseResponse(ctx)
+		convolverGain.gain.value = reverbLevel
+		masterGain.gain.value = volume
+
+		oscillator.connect(gainNode)
+		gainNode.connect(masterGain)
+		gainNode.connect(convolver)
+		convolver.connect(convolverGain)
+		convolverGain.connect(masterGain)
+		masterGain.connect(ctx.destination)
+
+		oscillator.type = type
+		oscillator.start()
+
+		oscillatorRef.current = oscillator
+		gainNodeRef.current = gainNode
+		convolverRef.current = convolver
+
+		const pos = 'touches' in e ? e.touches[0] : e
+		updateSoundFromPosition(pos.clientX, pos.clientY, true)
+		const x = pos.clientX / window.innerWidth
+		const y = pos.clientY / window.innerHeight
+		sendEvent('start', x, y)
+
+		setIsActive(true)
+	}
+
+	const getImpulseResponse = (ctx: AudioContext) => {
+		if (!impulseResponseRef.current) {
+			impulseResponseRef.current = createImpulseResponse(ctx)
+		}
+		return impulseResponseRef.current
+	}
 
 	const createImpulseResponse = (
 		ctx: AudioContext,
@@ -37,65 +90,29 @@ export function useChaosAudio() {
 	) => {
 		const x = clientX / window.innerWidth
 		const y = clientY / window.innerHeight
-
 		const freq = 100 + x * 1000
 		const amp = 1 - y
 
 		if (oscillatorRef.current) {
-			oscillatorRef.current.frequency.setValueAtTime(
-				freq,
-				audioCtxRef.current!.currentTime
-			)
+			const currentFreq = oscillatorRef.current.frequency.value
+			if (Math.abs(currentFreq - freq) > 0.1) {
+				oscillatorRef.current.frequency.setValueAtTime(
+					freq,
+					audioCtxRef.current!.currentTime
+				)
+			}
 		}
 
 		if (gainNodeRef.current && audioCtxRef.current) {
-			const now = audioCtxRef.current.currentTime
 			const g = gainNodeRef.current.gain
-			g.cancelScheduledValues(now)
-			g.setValueAtTime(0, now)
-			g.linearRampToValueAtTime(amp * 0.5, now)
+			if (Math.abs(g.value - amp * 0.5) > 0.01) {
+				const now = audioCtxRef.current.currentTime
+				g.cancelScheduledValues(now)
+				g.setValueAtTime(amp * 0.5, now)
+			}
 		}
 
 		if (send) sendEvent('move', x, y)
-	}
-
-	const startAudio = (e: React.MouseEvent | React.TouchEvent) => {
-		if (!audioCtxRef.current) {
-			audioCtxRef.current = new window.AudioContext()
-		}
-
-		const ctx = audioCtxRef.current
-
-		const oscillator = ctx.createOscillator()
-		const gainNode = ctx.createGain()
-		const convolver = ctx.createConvolver()
-		const convolverGain = ctx.createGain()
-
-		convolver.buffer = createImpulseResponse(ctx)
-		convolverGain.gain.value = reverbLevel
-
-		oscillator.connect(gainNode)
-		gainNode.connect(ctx.destination)
-		gainNode.connect(convolver)
-		convolver.connect(convolverGain)
-		convolverGain.connect(ctx.destination)
-
-		oscillator.type = 'sine'
-		gainNode.gain.value = 0
-
-		oscillator.start()
-
-		oscillatorRef.current = oscillator
-		gainNodeRef.current = gainNode
-		convolverRef.current = convolver
-
-		const pos = 'touches' in e ? e.touches[0] : e
-		updateSoundFromPosition(pos.clientX, pos.clientY, true)
-		const x = pos.clientX / window.innerWidth
-		const y = pos.clientY / window.innerHeight
-		sendEvent('start', x, y)
-
-		setIsActive(true)
 	}
 
 	const stopAudio = () => {
@@ -107,16 +124,18 @@ export function useChaosAudio() {
 			g.linearRampToValueAtTime(0, now + release)
 		}
 
-		setTimeout(() => {
-			oscillatorRef.current?.stop()
-			oscillatorRef.current?.disconnect()
-			gainNodeRef.current?.disconnect()
-			convolverRef.current?.disconnect()
+		audioCtxRef.current?.addEventListener('statechange', () => {
+			if (audioCtxRef.current?.state === 'running') {
+				oscillatorRef.current?.stop()
+				oscillatorRef.current?.disconnect()
+				gainNodeRef.current?.disconnect()
+				convolverRef.current?.disconnect()
+				oscillatorRef.current = null
+				gainNodeRef.current = null
+				convolverRef.current = null
+			}
+		})
 
-			oscillatorRef.current = null
-			gainNodeRef.current = null
-			convolverRef.current = null
-		}, (release + 0.1) * 10000)
 		sendEvent('stop', 0, 0)
 		setIsActive(false)
 	}
@@ -136,5 +155,7 @@ export function useChaosAudio() {
 		setReverbLevel,
 		release,
 		reverbLevel,
+		volume,
+		setVolume,
 	}
 }
