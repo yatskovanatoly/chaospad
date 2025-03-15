@@ -1,14 +1,11 @@
 'use client'
 
 import { WS_URL } from '@/config'
-import { WSContextType } from '@/type'
 import {
-	createContext,
-	useContext,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
 } from 'react'
 import { WebSocketContext } from './WsContext'
 
