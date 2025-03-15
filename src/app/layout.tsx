@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import { WebSocketProvider } from '@/components/WsContext'
+import WebSocketProvider from '@/components/WsContextProvider'
 
 export const metadata: Metadata = {
 	title: 'Create Next App',

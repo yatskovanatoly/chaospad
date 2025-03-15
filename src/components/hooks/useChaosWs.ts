@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef } from 'react'
-import { useWebSocket } from '../WsContext'
+import { useMemo, useRef } from 'react'
+import useWebSocket from './useWebSocket'
 
 export function useChaosWebSocket() {
 	const audioCtxRef = useRef<AudioContext | null>(null)
-	const { wsRef, userId } = useWebSocket()
+	const { message } = useWebSocket()
 
 	const remoteUsersRef = useRef<
 		Record<string, { osc: OscillatorNode; gain: GainNode }>
@@ -43,7 +43,6 @@ export function useChaosWebSocket() {
 			if (!audioCtxRef.current) {
 				audioCtxRef.current = new AudioContext()
 			}
-			console.log('handling')
 			const ctx = audioCtxRef.current
 			const { userId: id, type, x, y } = data
 
@@ -76,25 +75,6 @@ export function useChaosWebSocket() {
 				}
 			}
 		},
-		[]
+		[message]
 	)
-
-	useEffect(() => {
-		const ws = wsRef.current
-		if (!ws) return
-
-		ws.onmessage = (event) => {
-			const data =
-				event.data instanceof ArrayBuffer
-					? new TextDecoder().decode(event.data) // Decode ArrayBuffer to string
-					: event.data // If it's already a string
-			const parsedData = JSON.parse(data) // Now you can safely parse it
-			console.log(parsedData.userId, userId)
-			if (parsedData.userId !== userId) {
-				handleRemoteEvent(parsedData)
-			}
-		}
-
-		return () => ws.close()
-	}, [handleRemoteEvent, userId, wsRef])
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import useWebSocket from '../WsContext'
+import useWebSocket from './useWebSocket'
 
 export function useChaosAudio() {
 	const audioCtxRef = useRef<AudioContext | null>(null)
@@ -154,5 +154,6 @@ export function useChaosAudio() {
 		reverbLevel,
 		volume,
 		setVolume,
+		oscillatorRef,
 	}
 }

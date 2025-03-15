@@ -2,7 +2,7 @@
 
 import { useChaosAudio } from './hooks/useChaosAudio'
 import { useChaosWebSocket } from './hooks/useChaosWs'
-import useWebSocket from './WsContext'
+import useWebSocket from './hooks/useWebSocket'
 
 export default function ChaosPad() {
 	const {
@@ -15,6 +15,7 @@ export default function ChaosPad() {
 		volume,
 		setVolume,
 		isActive,
+		oscillatorRef,
 	} = useChaosAudio()
 
 	const { setType, setPos } = useWebSocket()
@@ -36,7 +37,9 @@ export default function ChaosPad() {
 				className='w-full h-full flex-1'
 				onMouseDown={(e) => handleEvent(e, 'start')}
 				onMouseUp={(e) => handleEvent(e, 'stop')}
-				onMouseMove={(e) => isActive && handleEvent(e, 'move')}
+				onMouseMove={(e) =>
+					isActive && oscillatorRef.current && handleEvent(e, 'move')
+				}
 				onTouchStart={(e) => handleEvent(e, 'start')}
 				onTouchEnd={(e) => handleEvent(e, 'stop')}
 				onTouchMove={(e) => handleEvent(e, 'move')}
