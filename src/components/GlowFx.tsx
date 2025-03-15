@@ -1,11 +1,6 @@
 'use client'
 
-import React, {
-	PropsWithChildren,
-	useCallback,
-	useEffect,
-	useMemo,
-} from 'react'
+import React, { PropsWithChildren, useCallback, useEffect } from 'react'
 import useWebSocket from './hooks/useWebSocket'
 
 const GlowEffect: React.FC<PropsWithChildren> = ({ children }) => {
@@ -13,8 +8,31 @@ const GlowEffect: React.FC<PropsWithChildren> = ({ children }) => {
 	const x = Math.floor(pos.x)
 	const y = Math.floor(pos.y)
 
-	const spawnGlow = useMemo(
-		() => (x: number, y: number, color: string) => {
+	const useThrottledGlow = (
+		trigger: any,
+		x?: number,
+		y?: number,
+		color?: string
+	) => {
+		useEffect(() => {
+			if (!trigger) return
+			let lastGlowTime = 0
+			const throttledSpawn = () => {
+				const now = Date.now()
+				if (now - lastGlowTime < 50) return
+				lastGlowTime = now
+				x && y && color && spawnGlow(x, y, color)
+			}
+
+			throttledSpawn()
+		}, [trigger])
+	}
+
+	useThrottledGlow(message, message?.x, message?.y, message?.color)
+	useThrottledGlow(pos, x, y, color)
+
+	const spawnGlow = useCallback(
+		(x: number, y: number, color: string) => {
 			const glow = document.createElement('div')
 			glow.classList.add(
 				'glow',
@@ -39,38 +57,8 @@ const GlowEffect: React.FC<PropsWithChildren> = ({ children }) => {
 
 			if (type === 'stop') glow.remove()
 		},
-		[]
+		[pos]
 	)
-
-	// Pointer event handling
-	useEffect(() => {
-		let lastGlowTime = 0
-
-		const throttledSpawn = () => {
-			const now = Date.now()
-			if (now - lastGlowTime < 50) return
-			lastGlowTime = now
-
-			spawnGlow(x, y, color)
-		}
-
-		throttledSpawn()
-	}, [pos])
-
-	// Pointer event handling
-	useEffect(() => {
-		let lastGlowTime = 0
-		if (!message) return
-		const throttledSpawn = () => {
-			const now = Date.now()
-			if (now - lastGlowTime < 50) return
-			lastGlowTime = now
-
-			spawnGlow(message.x, message.y, message.color)
-		}
-
-		throttledSpawn()
-	}, [message])
 
 	return <div>{children}</div>
 }
