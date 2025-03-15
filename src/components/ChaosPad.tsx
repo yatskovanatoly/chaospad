@@ -25,14 +25,14 @@ export default function ChaosPad() {
 		type: 'move' | 'stop' | 'start'
 	) => {
 		const pos = 'touches' in e ? e.touches[0] : e
-		setPos({ x: pos.clientX, y: pos.clientY })
+		setPos({ x: pos?.clientX, y: pos?.clientY })
 		setType(type)
 	}
 
 	useChaosWebSocket()
 
 	return (
-		<div className='w-full h-screen bg-gradient-to-br text-black inverc from-red-200 via-green-200 to-blue-200 flex flex-col items-center justify-center select-none'>
+		<div className='w-full h-dvh bg-gradient-to-br text-black inverc from-red-200 via-green-200 to-blue-200 flex flex-col items-center justify-center select-none'>
 			<div
 				className='w-full h-full flex-1'
 				onMouseDown={(e) => handleEvent(e, 'start')}

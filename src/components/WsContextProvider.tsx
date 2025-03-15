@@ -51,6 +51,7 @@ const getUserId = () => {
 		return crypto.randomUUID()
 	} catch (e) {
 		console.log(e)
+    return Math.random().toFixed()
 	}
 }
 

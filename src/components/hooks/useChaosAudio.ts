@@ -21,39 +21,51 @@ export function useChaosAudio() {
 	}, [])
 
 	const startAudio = () => {
-		if (!audioCtxRef.current) {
-			audioCtxRef.current = new window.AudioContext()
-		}
-
-		const ctx = audioCtxRef.current
-
-		const oscillator = ctx.createOscillator()
-		const gainNode = ctx.createGain()
-		const convolver = ctx.createConvolver()
-		const convolverGain = ctx.createGain()
-		const masterGain = ctx.createGain()
-
-		convolver.buffer = getImpulseResponse(ctx)
-		convolverGain.gain.value = reverbLevel
-		masterGain.gain.value = volume
-
-		oscillator.connect(gainNode)
-		gainNode.connect(masterGain)
-		gainNode.connect(convolver)
-		convolver.connect(convolverGain)
-		convolverGain.connect(masterGain)
-		masterGain.connect(ctx.destination)
-
-		oscillator.type = type
-		oscillator.start()
-
-		oscillatorRef.current = oscillator
-		gainNodeRef.current = gainNode
-		convolverRef.current = convolver
-
-		updateSoundFromPosition(pos.x, pos.y)
-		setIsActive(true)
-	}
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new window.AudioContext()
+    }
+  
+    const ctx = audioCtxRef.current
+  
+    // Ensure the AudioContext is resumed
+    if (ctx.state === 'suspended') {
+      ctx.resume().then(() => {
+        console.log('AudioContext resumed')
+        startOscillator(ctx)
+      })
+    } else {
+      startOscillator(ctx)
+    }
+  }
+  
+  const startOscillator = (ctx: AudioContext) => {
+    const oscillator = ctx.createOscillator()
+    const gainNode = ctx.createGain()
+    const convolver = ctx.createConvolver()
+    const convolverGain = ctx.createGain()
+    const masterGain = ctx.createGain()
+  
+    convolver.buffer = getImpulseResponse(ctx)
+    convolverGain.gain.value = reverbLevel
+    masterGain.gain.value = volume
+  
+    oscillator.connect(gainNode)
+    gainNode.connect(masterGain)
+    gainNode.connect(convolver)
+    convolver.connect(convolverGain)
+    convolverGain.connect(masterGain)
+    masterGain.connect(ctx.destination)
+  
+    oscillator.type = type
+    oscillator.start()
+  
+    oscillatorRef.current = oscillator
+    gainNodeRef.current = gainNode
+    convolverRef.current = convolver
+  
+    updateSoundFromPosition(pos.x, pos.y)
+    setIsActive(true)
+  }
 
 	const getImpulseResponse = (ctx: AudioContext) => {
 		if (!impulseResponseRef.current) {

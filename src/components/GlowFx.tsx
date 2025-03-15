@@ -14,8 +14,8 @@ const GlowEffect: React.FC<PropsWithChildren> = ({ children }) => {
 		y?: number,
 		color?: string
 	) => {
-		let lastGlowTime = 0
-		useEffect(() => {
+    useEffect(() => {
+      let lastGlowTime = 0
 			if (!trigger) return
 			const throttledSpawn = () => {
 				const now = Date.now()
@@ -28,8 +28,20 @@ const GlowEffect: React.FC<PropsWithChildren> = ({ children }) => {
 		}, [trigger])
 	}
 
-	useThrottledGlow(message, message?.x, message?.y, message?.color)
 	useThrottledGlow(pos, x, y, color)
+
+  useEffect(() => {
+    let lastGlowTime = 0
+    if (!message) return
+    const throttledSpawn = () => {
+      const now = Date.now()
+      if (now - lastGlowTime < 50) return
+      lastGlowTime = now
+      x && y && color && spawnGlow(message!.x, message!.y, message!.color)
+    }
+
+    throttledSpawn()
+  }, [message])
 
 	const spawnGlow = useCallback(
 		(x: number, y: number, color: string) => {
