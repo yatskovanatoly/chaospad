@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useWebSocket } from '../WsContext'
+import useWebSocket from '../WsContext'
 
 export function useChaosAudio() {
 	const audioCtxRef = useRef<AudioContext | null>(null)
@@ -10,16 +10,17 @@ export function useChaosAudio() {
 	const [release, setRelease] = useState(0.5)
 	const [reverbLevel, setReverbLevel] = useState(0.5)
 	const [volume, setVolume] = useState(1)
-	const { sendEvent } = useWebSocket()
 	const impulseResponseRef = useRef<AudioBuffer | null>(null)
 	const [type, setType] = useState<OscillatorType>('sine')
+
+	const { pos, type: motionType } = useWebSocket()
 
 	useEffect(() => {
 		const types: OscillatorType[] = ['sine', 'triangle']
 		setType(types[Math.floor(Math.random() * types.length)])
 	}, [])
 
-	const startAudio = (e: React.MouseEvent | React.TouchEvent) => {
+	const startAudio = () => {
 		if (!audioCtxRef.current) {
 			audioCtxRef.current = new window.AudioContext()
 		}
@@ -50,12 +51,7 @@ export function useChaosAudio() {
 		gainNodeRef.current = gainNode
 		convolverRef.current = convolver
 
-		const pos = 'touches' in e ? e.touches[0] : e
-		updateSoundFromPosition(pos.clientX, pos.clientY, true)
-		const x = pos.clientX / window.innerWidth
-		const y = pos.clientY / window.innerHeight
-		sendEvent('start', x, y)
-
+		updateSoundFromPosition(pos.x, pos.y)
 		setIsActive(true)
 	}
 
@@ -111,8 +107,6 @@ export function useChaosAudio() {
 				g.setValueAtTime(amp * 0.5, now)
 			}
 		}
-
-		if (send) sendEvent('move', x, y)
 	}
 
 	const stopAudio = () => {
@@ -136,20 +130,23 @@ export function useChaosAudio() {
 			}
 		})
 
-		sendEvent('stop', 0, 0)
 		setIsActive(false)
 	}
 
-	const handleMove = (e: React.MouseEvent | React.TouchEvent) => {
-		if (!isActive || !oscillatorRef.current) return
-		const pos = 'touches' in e ? e.touches[0] : e
-		updateSoundFromPosition(pos.clientX, pos.clientY, true)
-	}
+	// Respond to motionType and pos
+	useEffect(() => {
+		if (motionType === 'start' && !isActive) {
+			startAudio()
+		} else if (motionType === 'move' && isActive) {
+			updateSoundFromPosition(pos.x, pos.y)
+		} else if (motionType === 'stop' && isActive) {
+			stopAudio()
+		}
+	}, [motionType, pos, isActive])
 
 	return {
 		startAudio,
 		stopAudio,
-		handleMove,
 		isActive,
 		setRelease,
 		setReverbLevel,
