@@ -1,12 +1,7 @@
 'use client'
 
 import { WS_URL } from '@/config'
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { WebSocketContext } from './WsContext'
 
 const WebSocketProvider = ({ children }: { children: React.ReactNode }) => {
@@ -25,7 +20,10 @@ const WebSocketProvider = ({ children }: { children: React.ReactNode }) => {
 
 		ws.onmessage = (event) => {
 			const parsedData = JSON.parse(event.data)
-			if (parsedData.userId !== userId) {
+			if (
+				parsedData.userId !== userId &&
+				JSON.stringify(parsedData) !== JSON.stringify(message)
+			) {
 				setMessage(parsedData)
 			}
 		}
@@ -37,7 +35,7 @@ const WebSocketProvider = ({ children }: { children: React.ReactNode }) => {
 		if (wsRef.current?.readyState === WebSocket.OPEN) {
 			wsRef.current?.send(JSON.stringify({ userId, type, x, y, color }))
 		}
-	}, [pos])
+	}, [pos, type, userId, color, x, y])
 
 	return (
 		<WebSocketContext.Provider

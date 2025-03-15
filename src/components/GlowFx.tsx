@@ -14,9 +14,9 @@ const GlowEffect: React.FC<PropsWithChildren> = ({ children }) => {
 		y?: number,
 		color?: string
 	) => {
+		let lastGlowTime = 0
 		useEffect(() => {
 			if (!trigger) return
-			let lastGlowTime = 0
 			const throttledSpawn = () => {
 				const now = Date.now()
 				if (now - lastGlowTime < 50) return

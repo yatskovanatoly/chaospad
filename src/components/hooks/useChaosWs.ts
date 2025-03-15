@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import useWebSocket from './useWebSocket'
 
 export function useChaosWebSocket() {
@@ -8,6 +8,12 @@ export function useChaosWebSocket() {
 	const remoteUsersRef = useRef<
 		Record<string, { osc: OscillatorNode; gain: GainNode }>
 	>({})
+
+	useEffect(() => {
+		if (!audioCtxRef.current) {
+			audioCtxRef.current = new AudioContext()
+		}
+	}, [])
 
 	const createImpulseResponse = (
 		ctx: AudioContext,
@@ -38,8 +44,8 @@ export function useChaosWebSocket() {
 		gain.gain.setValueAtTime(vol * 0.3, audioCtxRef.current!.currentTime)
 	}
 
-	const handleRemoteEvent = useMemo(
-		() => (data: { userId: string; type: string; x: number; y: number }) => {
+	const handleRemoteEvent = useCallback(
+		(data: { userId: string; type: string; x: number; y: number }) => {
 			if (!audioCtxRef.current) {
 				audioCtxRef.current = new AudioContext()
 			}
@@ -75,6 +81,13 @@ export function useChaosWebSocket() {
 				}
 			}
 		},
-		[message]
+		[audioCtxRef]
 	)
+
+	useEffect(() => {
+		if (!message) return
+		const { userId, type, x, y } = message
+		console.log('effect', message)
+		handleRemoteEvent({ userId: userId!, type, x, y })
+	}, [message, handleRemoteEvent])
 }
