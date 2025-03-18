@@ -1,40 +1,69 @@
 import { createImpulseResponse } from './createImpulseResponse'
 import { getSoundParamsFromXY } from './getSoundParams'
 
-// Updated createSoundChain function
-export const createSoundChain = (
-	ctx: AudioContext,
-	x: number,
-	y: number
-): {
-	osc: OscillatorNode
-	gain: GainNode
-	convolver: ConvolverNode
-	convolverGain: GainNode
-} => {
-	const osc = ctx.createOscillator()
-	const gain = ctx.createGain()
+function createSoundChain({
+	ctx,
+	type = 'sine',
+	volume = 0.2,
+	reverbLevel = 0.4,
+	position = { x: 0, y: 0 },
+	impulseResponse,
+}: OscillatorOptions): OscillatorResult {
+	const oscillator = ctx.createOscillator()
+	const gainNode = ctx.createGain()
 	const convolver = ctx.createConvolver()
 	const convolverGain = ctx.createGain()
 	const masterGain = ctx.createGain()
+	const { freq } = getSoundParamsFromXY(position.x, position.y)
 
-	convolver.buffer = createImpulseResponse(ctx)
-	const { freq, amp } = getSoundParamsFromXY(x, y)
+	convolver.buffer = impulseResponse || createImpulseResponse(ctx)
+	convolverGain.gain.value = reverbLevel
+	masterGain.gain.value = volume
 
-	// const freq = 100 + x * 1000 // or calculate dynamically
-	// const amp = 1 - y
+	oscillator.connect(gainNode)
+	gainNode.connect(masterGain)
+	gainNode.connect(convolver)
+	convolver.connect(convolverGain)
+	convolverGain.connect(masterGain)
+	masterGain.connect(ctx.destination)
 
-	osc.type = 'sine'
-	osc.frequency.setValueAtTime(freq, ctx.currentTime)
-	gain.gain.setValueAtTime(amp * 0.5, ctx.currentTime) // match local scaling
+	oscillator.type = type
+	oscillator.frequency.value = freq
+	oscillator.start()
 
-	osc.connect(gain).connect(masterGain)
+	const stop = () => {
+		oscillator.stop()
+		oscillator.disconnect()
+		gainNode.disconnect()
+		convolver.disconnect()
+		convolverGain.disconnect()
+		masterGain.disconnect()
+	}
 
-	gain
-		.connect(convolver)
-		.connect(convolverGain)
-		.connect(masterGain)
-		.connect(ctx.destination)
-
-	return { osc, gain, convolver, convolverGain }
+	return {
+		oscillator,
+		gainNode,
+		convolver,
+		convolverGain,
+		stop,
+	}
 }
+
+type OscillatorOptions = {
+	ctx: AudioContext
+	type?: OscillatorType
+	volume?: number
+	reverbLevel?: number
+	position?: { x: number; y: number }
+	impulseResponse?: AudioBuffer
+}
+
+type OscillatorResult = {
+	oscillator: OscillatorNode
+	gainNode: GainNode
+	convolver: ConvolverNode
+	convolverGain: GainNode
+	stop: () => void
+}
+
+export default createSoundChain
