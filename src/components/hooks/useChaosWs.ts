@@ -1,4 +1,4 @@
-import handleRemoteEvent from '@/helpers/handleRemoteAudio'
+import handleRemoteEvent from '@/helpers/audio/handleRemoteAudio'
 import { useEffect, useRef } from 'react'
 import useWebSocket from './useWebSocket'
 

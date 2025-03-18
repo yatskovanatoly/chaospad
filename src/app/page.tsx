@@ -6,7 +6,7 @@ import GlowFx from '@/components/GlowFx'
 const Page = () => (
 	<div>
 		<ChaosPad />
-		{/* <GlowFx /> */}
+		<GlowFx />
 	</div>
 )
 
