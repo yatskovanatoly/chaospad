@@ -6,8 +6,6 @@ import useWebSocket from './hooks/useWebSocket'
 
 export default function ChaosPad() {
 	const {
-		startAudio,
-		stopAudio,
 		setRelease,
 		setReverbLevel,
 		release,
