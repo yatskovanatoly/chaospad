@@ -1,7 +1,7 @@
-import { updateSoundFromPosition } from '@/helpers/audio/updateSoundFromPosition'
+import createSoundChain from '@/helpers/sound/createSoundChain'
+import { updateSoundFromPosition } from '@/helpers/sound/updateSoundFromPosition'
 import { useEffect, useRef, useState } from 'react'
 import useWebSocket from './useWebSocket'
-import createSoundChain from '@/helpers/audio/createSoundChain'
 
 export function useChaosAudio() {
 	const audioCtxRef = useRef<AudioContext | null>(null)

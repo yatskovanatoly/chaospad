@@ -1,9 +1,10 @@
 import { Dispatch, RefObject, SetStateAction } from 'react'
+import { MotionType } from './components/WsContextProvider'
 
 export type WSContextType = {
 	wsRef: RefObject<WebSocket | null>
-	type: 'start' | 'move' | 'stop'
-	setType: Dispatch<SetStateAction<'start' | 'move' | 'stop'>>
+	type: MotionType
+	setType: Dispatch<SetStateAction<MotionType>>
 	userId: string | undefined
 	color: string
 	pos: { x: number; y: number }

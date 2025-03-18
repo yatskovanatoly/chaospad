@@ -50,7 +50,7 @@ const getUserId = () => {
 		return crypto.randomUUID()
 	} catch (e) {
 		console.log(e)
-    return Math.random().toFixed()
+		return Math.random().toFixed()
 	}
 }
 
@@ -61,6 +61,8 @@ const colors = [
 	'border-yellow-500',
 	'border-purple-500',
 ]
+
+export type MotionType = 'start' | 'stop' | 'move'
 
 // Hash function to pick a consistent color based on user ID
 const getColorForUser = (id: string | undefined) => {

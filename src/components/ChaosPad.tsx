@@ -3,6 +3,7 @@
 import { useChaosAudio } from './hooks/useChaosAudio'
 import { useChaosWebSocket } from './hooks/useChaosWs'
 import useWebSocket from './hooks/useWebSocket'
+import { MotionType } from './WsContextProvider'
 
 export default function ChaosPad() {
 	const {
@@ -20,7 +21,7 @@ export default function ChaosPad() {
 
 	const handleEvent = (
 		e: React.MouseEvent | React.TouchEvent,
-		type: 'move' | 'stop' | 'start'
+		type: MotionType
 	) => {
 		const pos = 'touches' in e ? e.touches[0] : e
 		setPos({ x: pos?.clientX, y: pos?.clientY })
