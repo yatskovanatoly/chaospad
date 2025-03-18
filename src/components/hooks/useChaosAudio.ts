@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import useWebSocket from './useWebSocket'
+import { getSoundParamsFromXY } from '@/helpers/getSoundParams'
 
 export function useChaosAudio() {
 	const audioCtxRef = useRef<AudioContext | null>(null)
@@ -11,61 +12,55 @@ export function useChaosAudio() {
 	const [reverbLevel, setReverbLevel] = useState(0.5)
 	const [volume, setVolume] = useState(1)
 	const impulseResponseRef = useRef<AudioBuffer | null>(null)
-	const [type, setType] = useState<OscillatorType>('sine')
-
 	const { pos, type: motionType } = useWebSocket()
 
-	useEffect(() => {
-		const types: OscillatorType[] = ['sine', 'triangle']
-		setType(types[Math.floor(Math.random() * types.length)])
-	}, [])
-
 	const startAudio = () => {
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new window.AudioContext()
-    }
-  
-    const ctx = audioCtxRef.current
-  
-    // Ensure the AudioContext is resumed
-    if (ctx.state === 'suspended') {
-      ctx.resume().then(() => {
-        console.log('AudioContext resumed')
-        startOscillator(ctx)
-      })
-    } else {
-      startOscillator(ctx)
-    }
-  }
-  
-  const startOscillator = (ctx: AudioContext) => {
-    const oscillator = ctx.createOscillator()
-    const gainNode = ctx.createGain()
-    const convolver = ctx.createConvolver()
-    const convolverGain = ctx.createGain()
-    const masterGain = ctx.createGain()
-  
-    convolver.buffer = getImpulseResponse(ctx)
-    convolverGain.gain.value = reverbLevel
-    masterGain.gain.value = volume
-  
-    oscillator.connect(gainNode)
-    gainNode.connect(masterGain)
-    gainNode.connect(convolver)
-    convolver.connect(convolverGain)
-    convolverGain.connect(masterGain)
-    masterGain.connect(ctx.destination)
-  
-    oscillator.type = type
-    oscillator.start()
-  
-    oscillatorRef.current = oscillator
-    gainNodeRef.current = gainNode
-    convolverRef.current = convolver
-  
-    updateSoundFromPosition(pos.x, pos.y)
-    setIsActive(true)
-  }
+		if (!audioCtxRef.current) {
+			audioCtxRef.current = new window.AudioContext()
+		}
+
+		const ctx = audioCtxRef.current
+
+		// Ensure the AudioContext is resumed
+		if (ctx.state === 'suspended') {
+			ctx.resume().then(() => {
+				console.log('AudioContext resumed')
+				startOscillator(ctx)
+			})
+		} else {
+			startOscillator(ctx)
+		}
+	}
+
+	const startOscillator = (ctx: AudioContext) => {
+		const oscillator = ctx.createOscillator()
+		const gainNode = ctx.createGain()
+		const convolver = ctx.createConvolver()
+		const convolverGain = ctx.createGain()
+		const masterGain = ctx.createGain()
+
+		convolver.buffer = getImpulseResponse(ctx)
+		convolverGain.gain.value = reverbLevel
+		masterGain.gain.value = volume
+
+		oscillator.connect(gainNode)
+		gainNode.connect(masterGain)
+		gainNode.connect(convolver)
+		convolver.connect(convolverGain)
+		convolverGain.connect(masterGain)
+		masterGain.connect(ctx.destination)
+
+		oscillator.start()
+
+		oscillatorRef.current = oscillator
+		gainNodeRef.current = gainNode
+		convolverRef.current = convolver
+
+		console.log(pos.x, pos.y)
+
+		updateSoundFromPosition(pos.x, pos.y)
+		setIsActive(true)
+	}
 
 	const getImpulseResponse = (ctx: AudioContext) => {
 		if (!impulseResponseRef.current) {
@@ -96,10 +91,8 @@ export function useChaosAudio() {
 		clientY: number,
 		send: boolean = false
 	) => {
-		const x = clientX / window.innerWidth
-		const y = clientY / window.innerHeight
-		const freq = 100 + x * 1000
-		const amp = 1 - y
+		const { freq, amp, x, y } = getSoundParamsFromXY(clientX, clientY)
+		console.log(x, y)
 
 		if (oscillatorRef.current) {
 			const currentFreq = oscillatorRef.current.frequency.value
