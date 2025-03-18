@@ -14,16 +14,17 @@ const handleRemoteEvent = ({
 		ctx = new AudioContext()
 	}
 
-	const { freq, amp, x: clientX, y: clientY } = getSoundParamsFromXY(x, y)
+	
 
 	if (type === 'start') {
-		const { osc, gain } = createSoundChain(ctx, clientX, clientY)
+		const { osc, gain } = createSoundChain(ctx, x, y)
 		osc.start()
 		remoteUsersRef[userId] = { osc, gain }
 	}
 
 	if (type === 'move') {
 		const user = remoteUsersRef[userId]
+    const { freq, amp } = getSoundParamsFromXY(x, y)
 		if (user) {
 			user.osc.frequency.setValueAtTime(freq, ctx.currentTime)
 			user.gain.gain.cancelScheduledValues(ctx.currentTime)
