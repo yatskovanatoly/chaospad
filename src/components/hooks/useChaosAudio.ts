@@ -1,14 +1,14 @@
+import { updateSoundFromPosition } from '@/helpers/updateSoundFromPosition'
 import { useEffect, useRef, useState } from 'react'
 import useWebSocket from './useWebSocket'
-import { getSoundParamsFromXY } from '@/helpers/getSoundParams'
-import { updateSoundFromPosition } from '@/helpers/updateSoundFromPosition'
-import { createSoundChain } from '@/helpers/createSoundChain'
+import createSoundChain from '@/helpers/createSoundChain'
 
 export function useChaosAudio() {
 	const audioCtxRef = useRef<AudioContext | null>(null)
 	const oscillatorRef = useRef<OscillatorNode | null>(null)
 	const gainNodeRef = useRef<GainNode | null>(null)
 	const convolverRef = useRef<ConvolverNode | null>(null)
+	const convolverGainRef = useRef<GainNode | null>(null)
 	const [isActive, setIsActive] = useState(false)
 	const [release, setRelease] = useState(0.5)
 	const [reverbLevel, setReverbLevel] = useState(0.5)
@@ -34,24 +34,17 @@ export function useChaosAudio() {
 	}
 
 	const startOscillator = (ctx: AudioContext) => {
-		const {
-			osc: oscillator,
-			gain,
-			convolver,
-			convolverGain,
-		} = createSoundChain(ctx, pos.x, pos.y)
+		const { oscillator, gainNode, convolver, convolverGain } = createSoundChain(
+			{ ctx, reverbLevel, volume, position: pos }
+		)
 
-		convolverGain.gain.value = reverbLevel
-		gain.gain.value = volume
-
-		oscillator.start()
+		updateSoundFromPosition(pos.x, pos.y, ctx, oscillator, gainNode)
+		setIsActive(true)
 
 		oscillatorRef.current = oscillator
-		gainNodeRef.current = gain
+		gainNodeRef.current = gainNode
 		convolverRef.current = convolver
-
-		updateSoundFromPosition(pos.x, pos.y, ctx, oscillator, gain)
-		setIsActive(true)
+		convolverGainRef.current = convolverGain
 	}
 
 	const stopAudio = () => {
@@ -77,6 +70,25 @@ export function useChaosAudio() {
 
 		setIsActive(false)
 	}
+
+	// Update volume and reverb levels
+	useEffect(() => {
+		if (gainNodeRef.current && audioCtxRef.current) {
+			gainNodeRef.current.gain.setValueAtTime(
+				volume,
+				audioCtxRef.current.currentTime
+			)
+		}
+	}, [volume])
+
+	useEffect(() => {
+		if (convolverGainRef.current && audioCtxRef.current) {
+			convolverGainRef.current.gain.setValueAtTime(
+				reverbLevel,
+				audioCtxRef.current.currentTime
+			)
+		}
+	}, [reverbLevel])
 
 	// Respond to motionType and pos
 	useEffect(() => {
