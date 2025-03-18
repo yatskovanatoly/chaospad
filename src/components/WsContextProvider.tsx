@@ -12,7 +12,6 @@ const WebSocketProvider = ({ children }: { children: React.ReactNode }) => {
 	const color = getColorForUser(userId) || colors[0]
 	const { x, y } = pos
 	const [message, setMessage] = useState(undefined)
-	console.log(message)
 
 	useEffect(() => {
 		const ws = new WebSocket(`ws://${WS_URL}`)
