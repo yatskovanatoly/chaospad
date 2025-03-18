@@ -1,4 +1,8 @@
-export const createImpulseResponse = (ctx: AudioContext, duration = 2, decay = 2) => {
+export const createImpulseResponse = (
+	ctx: AudioContext,
+	duration = 2,
+	decay = 2
+) => {
 	const rate = ctx.sampleRate
 	const length = rate * duration
 	const impulse = ctx.createBuffer(2, length, rate)
