@@ -1,5 +1,5 @@
 import { RemoteUserType } from '@/components/hooks/useChaosWs'
-import { createSoundChain } from './createSoundChain'
+import createSoundChain from './createSoundChain'
 import { getSoundParamsFromXY } from './getSoundParams'
 
 const handleRemoteEvent = ({
@@ -13,18 +13,17 @@ const handleRemoteEvent = ({
 	if (!ctx) {
 		ctx = new AudioContext()
 	}
-
-	
-
 	if (type === 'start') {
-		const { osc, gain } = createSoundChain(ctx, x, y)
-		osc.start()
-		remoteUsersRef[userId] = { osc, gain }
+		const { oscillator, gainNode } = createSoundChain({
+			ctx,
+			position: { x, y },
+		})
+		remoteUsersRef[userId] = { osc: oscillator, gain: gainNode }
 	}
 
 	if (type === 'move') {
 		const user = remoteUsersRef[userId]
-    const { freq, amp } = getSoundParamsFromXY(x, y)
+		const { freq, amp } = getSoundParamsFromXY(x, y)
 		if (user) {
 			user.osc.frequency.setValueAtTime(freq, ctx.currentTime)
 			user.gain.gain.cancelScheduledValues(ctx.currentTime)
