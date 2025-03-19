@@ -71,25 +71,6 @@ export function useChaosAudio() {
 		setIsActive(false)
 	}
 
-	// Update volume and reverb levels
-	useEffect(() => {
-		if (gainNodeRef.current && audioCtxRef.current) {
-			gainNodeRef.current.gain.setValueAtTime(
-				volume,
-				audioCtxRef.current.currentTime
-			)
-		}
-	}, [volume])
-
-	useEffect(() => {
-		if (convolverGainRef.current && audioCtxRef.current) {
-			convolverGainRef.current.gain.setValueAtTime(
-				reverbLevel,
-				audioCtxRef.current.currentTime
-			)
-		}
-	}, [reverbLevel])
-
 	// Respond to motionType and pos
 	useEffect(() => {
 		if (motionType === 'start' && !isActive) {
