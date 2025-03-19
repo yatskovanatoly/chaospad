@@ -3,9 +3,9 @@ import spawnGlow from './spawnGlow'
 
 const throttledSpawn = (
 	type: MotionType,
-	x?: number,
-	y?: number,
-	color?: string
+	x: number,
+	y: number,
+	color: string
 ) => {
 	let lastGlowTime = 0
 
@@ -14,7 +14,7 @@ const throttledSpawn = (
 	if (now - lastGlowTime < 50) return
 
 	lastGlowTime = now
-	x && y && color && spawnGlow(x, y, color, type)
+	spawnGlow(x, y, color, type)
 }
 
 export default throttledSpawn
