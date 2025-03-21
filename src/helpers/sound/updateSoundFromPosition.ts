@@ -11,7 +11,6 @@ export const updateSoundFromPosition = (
 
 	// Get frequency and amplitude from position
 	const { freq, amp, x, y } = getSoundParamsFromXY(clientX, clientY)
-	console.log(x, y)
 
 	// Update frequency if it has changed significantly
 	const currentFreq = osc.frequency.value
