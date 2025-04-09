@@ -1,4 +1,4 @@
-import { MotionType } from "@/components/WsContextProvider"
+import { MotionType } from '@/components/WsContextProvider'
 
 const spawnGlow = (x: number, y: number, color: string, type: MotionType) => {
 	const glow = document.createElement('div')
@@ -22,8 +22,6 @@ const spawnGlow = (x: number, y: number, color: string, type: MotionType) => {
 
 	document.body.appendChild(glow)
 	setTimeout(() => glow.remove(), 500)
-
-	if (type === 'stop') glow.remove()
 }
 
 export default spawnGlow
