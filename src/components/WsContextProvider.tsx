@@ -1,17 +1,17 @@
 'use client'
 
 import { WS_URL } from '@/config'
+import { colors, getColorForUser, getUserId } from '@/helpers/getUserParams'
+import { Position } from '@/type'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { WebSocketContext } from './WsContext'
-import { colors, getColorForUser, getUserId } from '@/helpers/getUserParams'
 
 const WebSocketProvider = ({ children }: { children: React.ReactNode }) => {
-	const [pos, setPos] = useState({ x: 0, y: 0 })
+	const [pos, setPos] = useState<Position | undefined>(undefined)
 	const [type, setType] = useState<'start' | 'move' | 'stop'>('stop')
 	const wsRef = useRef<WebSocket | null>(null)
 	const userId = useMemo(() => getUserId(), [])
 	const color = getColorForUser(userId) || colors[0]
-	const { x, y } = pos
 	const [message, setMessage] = useState(undefined)
 
 	useEffect(() => {
@@ -33,9 +33,11 @@ const WebSocketProvider = ({ children }: { children: React.ReactNode }) => {
 
 	useEffect(() => {
 		if (wsRef.current?.readyState === WebSocket.OPEN) {
-			wsRef.current?.send(JSON.stringify({ userId, type, x, y, color }))
+			wsRef.current?.send(
+				JSON.stringify({ userId, type, x: pos?.x, y: pos?.y, color })
+			)
 		}
-	}, [pos, type, userId, color, x, y])
+	}, [pos, type, userId, color])
 
 	return (
 		<WebSocketContext.Provider

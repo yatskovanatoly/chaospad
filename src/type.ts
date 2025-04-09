@@ -7,8 +7,8 @@ export type WSContextType = {
 	setType: Dispatch<SetStateAction<MotionType>>
 	userId: string | undefined
 	color: string
-	pos: { x: number; y: number }
-	setPos: Dispatch<SetStateAction<{ x: number; y: number }>>
+	pos: Position | undefined
+	setPos: Dispatch<SetStateAction<Position | undefined>>
 	message: Message
 }
 
@@ -18,3 +18,8 @@ type Message =
 			y: number
 	  })
 	| undefined
+
+export type Position = {
+	x: number
+	y: number
+}
