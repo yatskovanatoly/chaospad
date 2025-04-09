@@ -8,13 +8,15 @@ const GlowEffect: React.FC<PropsWithChildren> = ({ children }) => {
 	const { color, pos, type, message } = useWebSocket()
 
 	useEffect(() => {
-		throttledSpawn(type, pos.x, pos.y, color)
+		if (!pos) return
+		const { x, y } = pos
+		throttledSpawn(x, y, color, type)
 	}, [pos])
 
 	useEffect(() => {
 		if (!message) return
-		const { type, x, y, color } = message
-		throttledSpawn(type, x, y, color)
+		const { x, y, color, type } = message
+		throttledSpawn(x, y, color, type)
 	}, [message])
 
 	return <div>{children}</div>
