@@ -2,10 +2,10 @@ import { MotionType } from '@/components/WsContextProvider'
 import spawnGlow from './spawnGlow'
 
 const throttledSpawn = (
-	type: MotionType,
-	x: number,
+  x: number,
 	y: number,
-	color: string
+	color: string,
+	type: MotionType,
 ) => {
 	let lastGlowTime = 0
 
