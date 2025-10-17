@@ -38,7 +38,7 @@ export function useChaosAudio() {
 			{ ctx, reverbLevel, volume, position: pos }
 		)
 
-		updateSoundFromPosition(pos.x, pos.y, ctx, oscillator, gainNode)
+		pos && updateSoundFromPosition(pos.x, pos.y, ctx, oscillator, gainNode)
 		setIsActive(true)
 
 		oscillatorRef.current = oscillator
@@ -75,7 +75,7 @@ export function useChaosAudio() {
 	useEffect(() => {
 		if (motionType === 'start' && !isActive) {
 			startAudio()
-		} else if (motionType === 'move' && isActive) {
+		} else if (motionType === 'move' && isActive && pos) {
 			updateSoundFromPosition(
 				pos.x,
 				pos.y,
