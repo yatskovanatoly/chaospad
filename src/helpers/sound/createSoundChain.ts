@@ -14,7 +14,8 @@ function createSoundChain({
 	const convolver = ctx.createConvolver()
 	const convolverGain = ctx.createGain()
 	const masterGain = ctx.createGain()
-	const { freq } = getSoundParamsFromXY(position.x, position.y)
+
+	const { freq, amp } = getSoundParamsFromXY(position.x, position.y)
 
 	convolver.buffer = impulseResponse || createImpulseResponse(ctx)
 	convolverGain.gain.value = reverbLevel
@@ -29,6 +30,7 @@ function createSoundChain({
 
 	oscillator.type = type
 	oscillator.frequency.value = freq
+	gainNode.gain.value = amp * 0.5
 	oscillator.start()
 
 	const stop = () => {
