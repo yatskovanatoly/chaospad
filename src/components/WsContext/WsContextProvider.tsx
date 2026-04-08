@@ -1,7 +1,7 @@
 'use client'
 
 import { WS_URL } from '@/config'
-import { colors, getColorForUser, getUserId } from '@/helpers/getUserParams'
+import { colors, getColorForUser, getUserId } from '@/components/WsContext/helpers/getUserParams'
 import { Position } from '@/type'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { WebSocketContext } from './WsContext'

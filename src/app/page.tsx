@@ -1,13 +1,15 @@
 'use client'
 
-import ChaosPad from '@/components/ChaosPad'
-import GlowFx from '@/components/GlowFx'
+import { AudioEngineProvider } from '@/components/AudioEngineContext'
+import ChaosPad from '@/components/ChaosPad/ChaosPad'
+import WebSocketProvider from '@/components/WsContext/WsContextProvider'
 
 const Page = () => (
-	<div>
-		<ChaosPad />
-		<GlowFx />
-	</div>
+	<WebSocketProvider>
+		<AudioEngineProvider>
+			<ChaosPad />
+		</AudioEngineProvider>
+	</WebSocketProvider>
 )
 
 export default Page

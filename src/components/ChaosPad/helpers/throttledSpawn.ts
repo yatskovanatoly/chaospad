@@ -1,8 +1,8 @@
-import { MotionType } from '@/components/WsContextProvider'
+import { MotionType } from '@/components/WsContext/WsContextProvider'
 import spawnGlow from './spawnGlow'
 
 const throttledSpawn = (
-  x: number,
+	x: number,
 	y: number,
 	color: string,
 	type: MotionType,

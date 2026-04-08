@@ -1,8 +1,8 @@
 'use client'
 
-import throttledSpawn from '@/helpers/vision/throttledSpawn'
+import throttledSpawn from '@/components/ChaosPad/helpers/throttledSpawn'
 import React, { PropsWithChildren, useEffect } from 'react'
-import useWebSocket from './hooks/useWebSocket'
+import useWebSocket from '../WsContext/useWebSocket'
 
 const GlowEffect: React.FC<PropsWithChildren> = ({ children }) => {
 	const { color, pos, type, message } = useWebSocket()
