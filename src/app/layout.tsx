@@ -1,5 +1,6 @@
+import AudioEngineProvider from '@/components/AudioEngineContext/AudioEngineProvider'
 import MkCodeCredit from '@/components/MkcodeCredit'
-import WebSocketProvider from '@/components/WsContextProvider'
+import WebSocketProvider from '@/components/WsContext/WsContextProvider'
 import type { Metadata } from 'next'
 import './globals.css'
 
@@ -16,7 +17,7 @@ export default function RootLayout({
 	return (
 		<html lang='en'>
 			<body>
-				<WebSocketProvider>{children}</WebSocketProvider>
+				{children}
 				<MkCodeCredit />
 			</body>
 		</html>
