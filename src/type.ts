@@ -1,5 +1,5 @@
 import { Dispatch, RefObject, SetStateAction } from 'react'
-import { MotionType } from './components/WsContextProvider'
+import { MotionType } from './components/WsContext/WsContextProvider'
 
 export type WSContextType = {
 	wsRef: RefObject<WebSocket | null>
@@ -14,9 +14,9 @@ export type WSContextType = {
 
 type Message =
 	| (Pick<WSContextType, 'color' | 'userId' | 'type'> & {
-			x: number
-			y: number
-	  })
+		x: number
+		y: number
+	})
 	| undefined
 
 export type Position = {
