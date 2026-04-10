@@ -20,13 +20,37 @@ export default function ChaosPad() {
 
 	const { setType, setPos } = useWebSocket()
 
-	const handleEvent = (
-		e: React.MouseEvent | React.TouchEvent,
-		type: MotionType
-	) => {
-		const pos = 'touches' in e ? e.touches[0] : e
-		setPos({ x: pos?.clientX, y: pos?.clientY })
+	const emitPointer = (e: React.PointerEvent, type: MotionType) => {
+		setPos({ x: e.clientX, y: e.clientY })
 		setType(type)
+	}
+
+	const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+		if (e.pointerType === 'mouse' && e.button !== 0) return
+		e.currentTarget.setPointerCapture(e.pointerId)
+		emitPointer(e, 'start')
+	}
+
+	const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+		if (!isActive || !oscillatorRef.current) return
+		emitPointer(e, 'move')
+	}
+
+	const releaseCaptureIfHeld = (e: React.PointerEvent<HTMLDivElement>) => {
+		if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+			e.currentTarget.releasePointerCapture(e.pointerId)
+		}
+	}
+
+	const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+		if (e.pointerType === 'mouse' && e.button !== 0) return
+		releaseCaptureIfHeld(e)
+		emitPointer(e, 'stop')
+	}
+
+	const handlePointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+		releaseCaptureIfHeld(e)
+		emitPointer(e, 'stop')
 	}
 
 	useChaosWebSocket()
@@ -36,15 +60,11 @@ export default function ChaosPad() {
 			<div className='w-full h-dvh bg-gradient-to-t from-gray-800 to-black flex flex-col items-center justify-center select-none'>
 				<div className='w-full h-full flex-1 relative overflow-hidden'>
 					<div
-						className='absolute inset-0'
-						onMouseDown={(e) => handleEvent(e, 'start')}
-						onMouseUp={(e) => handleEvent(e, 'stop')}
-						onMouseMove={(e) =>
-							isActive && oscillatorRef.current && handleEvent(e, 'move')
-						}
-						onTouchStart={(e) => handleEvent(e, 'start')}
-						onTouchEnd={(e) => handleEvent(e, 'stop')}
-						onTouchMove={(e) => handleEvent(e, 'move')}
+						className='absolute inset-0 touch-none'
+						onPointerDown={handlePointerDown}
+						onPointerMove={handlePointerMove}
+						onPointerUp={handlePointerUp}
+						onPointerCancel={handlePointerCancel}
 					/>
 				</div>
 				<div className='w-full max-w-xl px-6 py-4 space-y-3 z-10 text-sm text-white'>
