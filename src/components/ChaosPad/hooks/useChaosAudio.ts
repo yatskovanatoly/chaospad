@@ -1,4 +1,5 @@
 import type { Voice } from '@/components/AudioEngineContext/AudioEngine'
+import type { QuantizeMode } from '@/components/AudioEngineContext/helpers/quantizeFreq'
 import { useAudioEngine } from '@/components/AudioEngineContext'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import useWebSocket from '../../WsContext/useWebSocket'
@@ -11,6 +12,7 @@ export function useChaosAudio() {
 	const [release, setRelease] = useState(0.5)
 	const [reverbLevel, setReverbLevel] = useState(0.5)
 	const [volume, setVolume] = useState(1)
+	const [quantize, setQuantize] = useState<QuantizeMode>('chromatic')
 	const { pos, type: motionType } = useWebSocket()
 
 	useEffect(() => {
@@ -18,11 +20,15 @@ export function useChaosAudio() {
 		engine.setReverbLevel(reverbLevel)
 	}, [engine, volume, reverbLevel])
 
+	useEffect(() => {
+		if (voiceRef.current) voiceRef.current.quantize = quantize
+	}, [quantize])
+
 	const startAudio = useCallback(() => {
 		engine.setVolume(volume)
 		engine.setReverbLevel(reverbLevel)
 		const run = () => {
-			const voice = engine.createVoice(pos ?? { x: 0, y: 0 })
+			const voice = engine.createVoice(pos ?? { x: 0, y: 0 }, quantize)
 			voiceRef.current = voice
 			oscillatorRef.current = voice.oscillator
 			setIsActive(true)
@@ -32,7 +38,7 @@ export function useChaosAudio() {
 		} else {
 			run()
 		}
-	}, [engine, pos, reverbLevel, volume])
+	}, [engine, pos, quantize, reverbLevel, volume])
 
 	const stopAudio = useCallback(() => {
 		if (voiceRef.current) {
@@ -63,6 +69,8 @@ export function useChaosAudio() {
 		reverbLevel,
 		volume,
 		setVolume,
+		quantize,
+		setQuantize,
 		oscillatorRef,
 	}
 }
