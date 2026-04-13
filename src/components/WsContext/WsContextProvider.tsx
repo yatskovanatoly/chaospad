@@ -1,6 +1,6 @@
 'use client'
 
-import { WS_URL } from '@/config'
+import { getPublicWebSocketUrl } from '@/config'
 import { colors, getColorForUser, getUserId } from '@/components/WsContext/helpers/getUserParams'
 import { Position } from '@/type'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -15,7 +15,7 @@ const WebSocketProvider = ({ children }: { children: React.ReactNode }) => {
 	const [message, setMessage] = useState(undefined)
 
 	useEffect(() => {
-		const ws = new WebSocket(`ws://${WS_URL}`)
+		const ws = new WebSocket(getPublicWebSocketUrl())
 		wsRef.current = ws
 
 		ws.onmessage = (event) => {
