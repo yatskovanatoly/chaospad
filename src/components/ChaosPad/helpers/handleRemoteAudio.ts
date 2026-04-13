@@ -14,6 +14,10 @@ const handleRemoteEvent = ({
 	void engine.ctx.resume()
 
 	if (type === 'start') {
+		const existing = remoteUsersRef[userId]
+		if (existing) {
+			existing.stop(REMOTE_RELEASE)
+		}
 		remoteUsersRef[userId] = engine.createVoice({ x, y })
 	}
 
