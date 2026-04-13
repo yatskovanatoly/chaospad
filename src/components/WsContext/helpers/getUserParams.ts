@@ -1,5 +1,3 @@
-import Error from 'next/error'
-
 export const colors = [
 	'border-blue-500',
 	'border-red-500',
@@ -22,7 +20,7 @@ export const getColorForUser = (id: string | undefined) => {
 export const getUserId = () => {
 	try {
 		return crypto.randomUUID()
-	} catch (e) {
+	} catch (_error) {
 		console.log('Error: Insecure environment to use crypto.randomUUID')
 		return Math.random().toFixed()
 	}

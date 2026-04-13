@@ -2,30 +2,36 @@
 
 import { getPublicWebSocketUrl } from '@/config'
 import { colors, getColorForUser, getUserId } from '@/components/WsContext/helpers/getUserParams'
-import { Position } from '@/type'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import type { Position, WSContextType } from '@/type'
+import { useEffect, useRef, useState } from 'react'
 import { WebSocketContext } from './WsContext'
 
 const WebSocketProvider = ({ children }: { children: React.ReactNode }) => {
 	const [pos, setPos] = useState<Position | undefined>(undefined)
 	const [type, setType] = useState<'start' | 'move' | 'stop'>('stop')
 	const wsRef = useRef<WebSocket | null>(null)
-	const userId = useMemo(() => getUserId(), [])
+	const userIdRef = useRef(getUserId())
+	const userId = userIdRef.current
 	const color = getColorForUser(userId) || colors[0]
-	const [message, setMessage] = useState(undefined)
+	const [message, setMessage] = useState<WSContextType['message']>(undefined)
 
 	useEffect(() => {
 		const ws = new WebSocket(getPublicWebSocketUrl())
 		wsRef.current = ws
 
 		ws.onmessage = (event) => {
-			const parsedData = JSON.parse(event.data)
-			if (
-				parsedData.userId !== userId &&
-				JSON.stringify(parsedData) !== JSON.stringify(message)
-			) {
-				setMessage(parsedData)
-			}
+			const parsedData = JSON.parse(event.data) as WSContextType['message']
+			if (!parsedData) return
+
+			setMessage((currentMessage) => {
+				if (parsedData.userId !== userIdRef.current) {
+					return JSON.stringify(parsedData) === JSON.stringify(currentMessage)
+						? currentMessage
+						: parsedData
+				}
+
+				return currentMessage
+			})
 		}
 
 		return () => ws.close()

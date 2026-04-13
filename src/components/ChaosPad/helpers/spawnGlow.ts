@@ -1,6 +1,11 @@
-import { MotionType } from '@/components/WsContext/WsContextProvider'
+import type { MotionType } from '@/components/WsContext/WsContextProvider'
 
-const spawnGlow = (x: number, y: number, color: string, type: MotionType) => {
+const spawnGlow = (
+	x: number,
+	y: number,
+	color: string,
+	_type: MotionType,
+) => {
 	const glow = document.createElement('div')
 	glow.classList.add(
 		'glow',

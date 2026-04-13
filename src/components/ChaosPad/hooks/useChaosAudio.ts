@@ -1,6 +1,6 @@
 import type { Voice } from '@/components/AudioEngineContext/AudioEngine'
 import { useAudioEngine } from '@/components/AudioEngineContext'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import useWebSocket from '../../WsContext/useWebSocket'
 
 export function useChaosAudio() {
@@ -18,7 +18,7 @@ export function useChaosAudio() {
 		engine.setReverbLevel(reverbLevel)
 	}, [engine, volume, reverbLevel])
 
-	const startAudio = () => {
+	const startAudio = useCallback(() => {
 		engine.setVolume(volume)
 		engine.setReverbLevel(reverbLevel)
 		const run = () => {
@@ -32,16 +32,16 @@ export function useChaosAudio() {
 		} else {
 			run()
 		}
-	}
+	}, [engine, pos, reverbLevel, volume])
 
-	const stopAudio = () => {
+	const stopAudio = useCallback(() => {
 		if (voiceRef.current) {
 			voiceRef.current.stop(release)
 			voiceRef.current = null
 			oscillatorRef.current = null
 		}
 		setIsActive(false)
-	}
+	}, [release])
 
 	useEffect(() => {
 		if (motionType === 'start' && !isActive) {
@@ -51,7 +51,7 @@ export function useChaosAudio() {
 		} else if (motionType === 'stop' && isActive) {
 			stopAudio()
 		}
-	}, [motionType, pos, isActive])
+	}, [isActive, motionType, pos, startAudio, stopAudio])
 
 	return {
 		startAudio,
