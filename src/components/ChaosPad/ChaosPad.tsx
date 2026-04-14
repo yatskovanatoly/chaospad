@@ -7,6 +7,7 @@ import { MotionType } from '../WsContext/WsContextProvider'
 import GlowEffect from './GlowFx'
 
 export default function ChaosPad() {
+
 	const {
 		setRelease,
 		setReverbLevel,
@@ -16,7 +17,10 @@ export default function ChaosPad() {
 		setVolume,
 		isActive,
 		oscillatorRef,
+		quantize,
 	} = useChaosAudio()
+
+	useChaosWebSocket(quantize)
 
 	const { setType, setPos } = useWebSocket()
 
@@ -52,8 +56,6 @@ export default function ChaosPad() {
 		releaseCaptureIfHeld(e)
 		emitPointer(e, 'stop')
 	}
-
-	useChaosWebSocket()
 
 	return (
 		<>
