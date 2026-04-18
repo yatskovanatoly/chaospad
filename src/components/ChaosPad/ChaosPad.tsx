@@ -1,31 +1,31 @@
 'use client'
 
+import { pixelToNormalized } from '@/components/AudioEngineContext/helpers/getSoundParams'
+import { useState } from 'react'
 import { useChaosAudio } from './hooks/useChaosAudio'
 import { useChaosWebSocket } from './hooks/useChaosWs'
 import useWebSocket from '../WsContext/useWebSocket'
 import { MotionType } from '../WsContext/WsContextProvider'
-import GlowEffect from './GlowFx'
+import { EventsContextProvider } from './EventsContext/EventsContextProvider'
+import { useEvents } from './EventsContext/useEvents'
+import { soundModes } from './sounds'
+import { visualizations } from './visualizations'
+import { SpectralDebugPanel } from './spectralDebug'
+import WaveformBufferViz from './visualizations/WaveformBufferViz'
 
-export default function ChaosPad() {
+function ChaosPadInner() {
+	const { isActive, oscillatorRef, quantize, soundModeId, setSoundModeId } = useChaosAudio()
 
-	const {
-		setRelease,
-		setReverbLevel,
-		release,
-		reverbLevel,
-		volume,
-		setVolume,
-		isActive,
-		oscillatorRef,
-		quantize,
-	} = useChaosAudio()
-
-	useChaosWebSocket(quantize)
+	useChaosWebSocket(quantize, soundModeId)
 
 	const { setType, setPos } = useWebSocket()
+	const { emitPadHover } = useEvents()
+	const [vizId, setVizId] = useState(visualizations[0].id)
+	const [spectralDebugOpen, setSpectralDebugOpen] = useState(false)
+	const ActiveViz = visualizations.find((v) => v.id === vizId)!.component
 
 	const emitPointer = (e: React.PointerEvent, type: MotionType) => {
-		setPos({ x: e.clientX, y: e.clientY })
+		setPos(pixelToNormalized(e.clientX, e.clientY))
 		setType(type)
 	}
 
@@ -36,8 +36,16 @@ export default function ChaosPad() {
 	}
 
 	const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+		if (e.pointerType !== 'mouse' || e.buttons === 0) {
+			emitPadHover(pixelToNormalized(e.clientX, e.clientY))
+		}
+
 		if (!isActive || !oscillatorRef.current) return
 		emitPointer(e, 'move')
+	}
+
+	const handlePointerLeave = () => {
+		emitPadHover(null)
 	}
 
 	const releaseCaptureIfHeld = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -65,50 +73,64 @@ export default function ChaosPad() {
 						className='absolute inset-0 touch-none'
 						onPointerDown={handlePointerDown}
 						onPointerMove={handlePointerMove}
+						onPointerLeave={handlePointerLeave}
 						onPointerUp={handlePointerUp}
 						onPointerCancel={handlePointerCancel}
 					/>
 				</div>
-				<div className='w-full max-w-xl px-6 py-4 space-y-3 z-10 text-sm text-white'>
-					<label className='block'>
-						Release: {release.toFixed(2)}s
+				<div className='w-full max-w-xl px-6 py-4 z-10 text-sm text-white space-y-2'>
+					<div className='flex flex-wrap gap-2'>
+						{visualizations.map((v) => (
+							<button
+								key={v.id}
+								onClick={() => setVizId(v.id)}
+								className={`px-3 py-1 rounded border text-xs transition-colors ${
+									vizId === v.id
+										? 'border-white bg-white text-black'
+										: 'border-gray-600 text-gray-400 hover:border-gray-400'
+								}`}
+							>
+								{v.label}
+							</button>
+						))}
+					</div>
+					<label className='flex items-center gap-2 cursor-pointer'>
 						<input
-							type='range'
-							min={0}
-							max={3}
-							step={0.01}
-							value={release}
-							onChange={(e) => setRelease(parseFloat(e.target.value))}
-							className='w-full accent-gray-500'
+							type='checkbox'
+							checked={spectralDebugOpen}
+							onChange={(e) => setSpectralDebugOpen(e.target.checked)}
+							className='rounded border-gray-600'
 						/>
+						<span className='text-neutral-400'>Spectrum debug</span>
 					</label>
-					<label className='block'>
-						Reverb: {Math.ceil(reverbLevel * 100)}%
-						<input
-							type='range'
-							min={0}
-							max={1}
-							step={0.01}
-							value={reverbLevel}
-							onChange={(e) => setReverbLevel(parseFloat(e.target.value))}
-							className='w-full accent-gray-500'
-						/>
-					</label>
-					<label className='block'>
-						Volume: {Math.ceil(volume * 100)}%
-						<input
-							type='range'
-							min={0}
-							max={1}
-							step={0.01}
-							value={volume}
-							onChange={(e) => setVolume(parseFloat(e.target.value))}
-							className='w-full accent-gray-500'
-						/>
-					</label>
+					<div className='flex flex-wrap gap-2'>
+						{soundModes.map((s) => (
+							<button
+								key={s.id}
+								onClick={() => setSoundModeId(s.id)}
+								className={`px-3 py-1 rounded border text-xs transition-colors ${
+									soundModeId === s.id
+										? 'border-amber-200 bg-amber-100 text-black'
+										: 'border-gray-600 text-gray-400 hover:border-gray-400'
+								}`}
+							>
+								{s.label}
+							</button>
+						))}
+					</div>
 				</div>
 			</div>
-			<GlowEffect />
+			<ActiveViz />
+			<WaveformBufferViz />
+			<SpectralDebugPanel open={spectralDebugOpen} />
 		</>
+	)
+}
+
+export default function ChaosPad() {
+	return (
+		<EventsContextProvider>
+			<ChaosPadInner />
+		</EventsContextProvider>
 	)
 }

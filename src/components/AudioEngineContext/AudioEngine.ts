@@ -1,7 +1,8 @@
+import { binsToPeriodicWave } from './helpers/binsToPeriodicWave'
 import { createImpulseResponse } from './helpers/createImpulseResponse'
-import { getSoundParamsFromXY } from './helpers/getSoundParams'
+import { getSoundParamsFromNormalized } from './helpers/getSoundParams'
 import { quantizeFreq, type QuantizeMode } from './helpers/quantizeFreq'
-import { updateSoundFromPosition } from './helpers/updateSoundFromPosition'
+import { updateSoundFromNormalized } from './helpers/updateSoundFromPosition'
 
 const ATTACK_S = 0.1
 
@@ -10,17 +11,22 @@ export class AudioEngine {
 	readonly convolver: ConvolverNode
 	readonly convolverGain: GainNode
 	readonly masterGain: GainNode
+	readonly masterAnalyser: AnalyserNode
 
 	constructor() {
-		this.ctx = new AudioContext()
+		this.ctx = new AudioContext({ latencyHint: 'playback' })
 		const impulse = createImpulseResponse(this.ctx)
 		this.convolver = this.ctx.createConvolver()
 		this.convolver.buffer = impulse
 		this.convolverGain = this.ctx.createGain()
 		this.masterGain = this.ctx.createGain()
+		this.masterAnalyser = this.ctx.createAnalyser()
+		this.masterAnalyser.fftSize = 1024
+		this.masterAnalyser.smoothingTimeConstant = 0.45
 		this.convolver.connect(this.convolverGain)
 		this.convolverGain.connect(this.masterGain)
-		this.masterGain.connect(this.ctx.destination)
+		this.masterGain.connect(this.masterAnalyser)
+		this.masterAnalyser.connect(this.ctx.destination)
 	}
 
 	setVolume(v: number) {
@@ -31,7 +37,7 @@ export class AudioEngine {
 		this.convolverGain.gain.value = v
 	}
 
-	createVoice(position: { x: number; y: number }, quantize: QuantizeMode = 'none') {
+	createVoice(position: { nx: number; ny: number }, quantize: QuantizeMode = 'none') {
 		return new Voice(this, position, quantize)
 	}
 }
@@ -43,7 +49,7 @@ export class Voice {
 	private releaseTimer?: ReturnType<typeof setTimeout>
 	quantize: QuantizeMode
 
-	constructor(engine: AudioEngine, position: { x: number; y: number }, quantize: QuantizeMode = 'none') {
+	constructor(engine: AudioEngine, position: { nx: number; ny: number }, quantize: QuantizeMode = 'none') {
 		this.engine = engine
 		this.quantize = quantize
 		const ctx = engine.ctx
@@ -51,7 +57,7 @@ export class Voice {
 		this.oscillator = ctx.createOscillator()
 		this.gain = ctx.createGain()
 		this.oscillator.type = 'sine'
-		const { freq: rawFreq, amp } = getSoundParamsFromXY(position.x, position.y)
+		const { freq: rawFreq, amp } = getSoundParamsFromNormalized(position.nx, position.ny)
 		this.oscillator.frequency.value = quantizeFreq(rawFreq, quantize)
 		const target = amp * 0.5
 		const now = ctx.currentTime
@@ -64,15 +70,26 @@ export class Voice {
 		this.oscillator.start(now)
 	}
 
-	updatePosition(x: number, y: number) {
-		updateSoundFromPosition(
-			x,
-			y,
+	updatePosition(nx: number, ny: number) {
+		const gainMul = this.oscillator.type === 'custom' ? 1.38 : 1
+		updateSoundFromNormalized(
+			nx,
+			ny,
 			this.engine.ctx,
 			this.oscillator,
 			this.gain,
-			this.quantize
+			this.quantize,
+			gainMul,
 		)
+	}
+
+	setSoundMode(mode: 'sine' | 'padWaveform', bins?: Float32Array) {
+		if (mode === 'sine') {
+			this.oscillator.type = 'sine'
+			return
+		}
+		if (!bins) return
+		this.oscillator.setPeriodicWave(binsToPeriodicWave(this.engine.ctx, bins))
 	}
 
 	stop(releaseSeconds: number) {

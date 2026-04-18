@@ -40,7 +40,7 @@ const WebSocketProvider = ({ children }: { children: React.ReactNode }) => {
 	useEffect(() => {
 		if (wsRef.current?.readyState === WebSocket.OPEN) {
 			wsRef.current?.send(
-				JSON.stringify({ userId, type, x: pos?.x, y: pos?.y, color })
+				JSON.stringify({ userId, type, nx: pos?.nx, ny: pos?.ny, color }),
 			)
 		}
 	}, [pos, type, userId, color])

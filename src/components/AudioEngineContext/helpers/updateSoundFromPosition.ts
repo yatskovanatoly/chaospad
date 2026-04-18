@@ -1,23 +1,24 @@
-import { getSoundParamsFromXY } from './getSoundParams'
+import { getSoundParamsFromNormalized } from './getSoundParams'
 import { quantizeFreq, type QuantizeMode } from './quantizeFreq'
 
-const SMOOTH_S = 0.03
+const SMOOTH_S = 0.045
 
-export const updateSoundFromPosition = (
-	clientX: number,
-	clientY: number,
+export const updateSoundFromNormalized = (
+	nx: number,
+	ny: number,
 	ctx: AudioContext | null,
 	osc: OscillatorNode | null,
 	gain: GainNode | null,
-	quantize: QuantizeMode = 'none'
+	quantize: QuantizeMode = 'none',
+	gainMul = 1,
 ) => {
 	if (!ctx || !osc || !gain) return
 
-	const { freq: rawFreq, amp } = getSoundParamsFromXY(clientX, clientY)
+	const { freq: rawFreq, amp } = getSoundParamsFromNormalized(nx, ny)
 	const freq = quantizeFreq(rawFreq, quantize)
 	const now = ctx.currentTime
 	const end = now + SMOOTH_S
-	const targetGain = amp * 0.5
+	const targetGain = amp * 0.5 * gainMul
 
 	const currentFreq = osc.frequency.value
 	if (Math.abs(currentFreq - freq) > 0.1) {

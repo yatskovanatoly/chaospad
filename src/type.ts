@@ -14,12 +14,12 @@ export type WSContextType = {
 
 type Message =
 	| (Pick<WSContextType, 'color' | 'userId' | 'type'> & {
-		x: number
-		y: number
+		nx: number
+		ny: number
 	})
 	| undefined
 
 export type Position = {
-	x: number
-	y: number
+	nx: number
+	ny: number
 }
