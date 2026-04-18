@@ -130,10 +130,10 @@ export default function WaveformBufferViz() {
 		gl.enableVertexAttribArray(aPos)
 		gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0)
 
-		if (uColor) gl.uniform4f(uColor, 0.71, 0.86, 1.0, 0.22)
+		if (uColor) gl.uniform4f(uColor, 0.88, 0.95, 1.0, 0.42)
 		gl.drawArrays(gl.TRIANGLE_STRIP, 0, stripLen)
 
-		if (uColor) gl.uniform4f(uColor, 0.71, 0.86, 1.0, 0.55)
+		if (uColor) gl.uniform4f(uColor, 0.88, 0.95, 1.0, 0.82)
 		gl.drawArrays(gl.LINE_STRIP, stripLen, lineLen)
 	}, [version, width, height, bins])
 
@@ -152,7 +152,7 @@ export default function WaveformBufferViz() {
 		<canvas
 			ref={canvasRef}
 			className='fixed inset-0 pointer-events-none z-[6]'
-			style={{ opacity: 0.75 }}
+			style={{ opacity: 0.92 }}
 		/>
 	)
 }
