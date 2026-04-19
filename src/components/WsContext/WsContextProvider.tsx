@@ -2,58 +2,71 @@
 
 import { getPublicWebSocketUrl } from '@/config'
 import { colors, getColorForUser, getUserId } from '@/components/WsContext/helpers/getUserParams'
-import type { Position, WSContextType } from '@/type'
-import { useEffect, useRef, useState } from 'react'
+import type { WireMessage } from '@/type'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { WebSocketContext } from './WsContext'
 
+export type MotionType = 'start' | 'stop' | 'move'
+
 const WebSocketProvider = ({ children }: { children: React.ReactNode }) => {
-	const [pos, setPos] = useState<Position | undefined>(undefined)
-	const [type, setType] = useState<'start' | 'move' | 'stop'>('stop')
-	const wsRef = useRef<WebSocket | null>(null)
 	const userIdRef = useRef(getUserId())
 	const userId = userIdRef.current
 	const color = getColorForUser(userId) || colors[0]
-	const [message, setMessage] = useState<WSContextType['message']>(undefined)
+
+	const wsRef = useRef<WebSocket | null>(null)
+	const listenersRef = useRef<Set<(msg: WireMessage) => void>>(new Set())
+	const queueRef = useRef<string[]>([])
 
 	useEffect(() => {
 		const ws = new WebSocket(getPublicWebSocketUrl())
 		wsRef.current = ws
 
-		ws.onmessage = (event) => {
-			const parsedData = JSON.parse(event.data) as WSContextType['message']
-			if (!parsedData) return
-
-			setMessage((currentMessage) => {
-				if (parsedData.userId !== userIdRef.current) {
-					return JSON.stringify(parsedData) === JSON.stringify(currentMessage)
-						? currentMessage
-						: parsedData
-				}
-
-				return currentMessage
-			})
+		ws.onopen = () => {
+			for (const payload of queueRef.current) ws.send(payload)
+			queueRef.current = []
 		}
 
-		return () => ws.close()
+		ws.onmessage = (event) => {
+			let parsed: WireMessage | null = null
+			try {
+				parsed = JSON.parse(event.data) as WireMessage
+			} catch {
+				return
+			}
+			if (!parsed || !parsed.userId) return
+			if (parsed.userId === userIdRef.current) return
+			for (const l of listenersRef.current) l(parsed)
+		}
+
+		return () => {
+			ws.close()
+			wsRef.current = null
+		}
 	}, [])
 
-	useEffect(() => {
-		if (wsRef.current?.readyState === WebSocket.OPEN) {
-			wsRef.current?.send(
-				JSON.stringify({ userId, type, nx: pos?.nx, ny: pos?.ny, color }),
-			)
+	const send = useCallback((msg: WireMessage) => {
+		const payload = JSON.stringify(msg)
+		const ws = wsRef.current
+		if (ws && ws.readyState === WebSocket.OPEN) {
+			ws.send(payload)
+		} else {
+			queueRef.current.push(payload)
 		}
-	}, [pos, type, userId, color])
+	}, [])
 
-	return (
-		<WebSocketContext.Provider
-			value={{ wsRef, type, setType, userId, color, pos, setPos, message }}
-		>
-			{children}
-		</WebSocketContext.Provider>
+	const subscribe = useCallback((listener: (msg: WireMessage) => void) => {
+		listenersRef.current.add(listener)
+		return () => {
+			listenersRef.current.delete(listener)
+		}
+	}, [])
+
+	const value = useMemo(
+		() => ({ userId, color, send, subscribe }),
+		[userId, color, send, subscribe],
 	)
-}
 
-export type MotionType = 'start' | 'stop' | 'move'
+	return <WebSocketContext.Provider value={value}>{children}</WebSocketContext.Provider>
+}
 
 export default WebSocketProvider

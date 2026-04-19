@@ -1,35 +1,53 @@
 'use client'
 
-import { useAudioEngine } from '@/components/AudioEngineContext/useAudioEngine'
-import { useEffect, useRef } from 'react'
-import {
-	appendSpectrumColumn,
-	clearSpectrum,
-	SPECTRUM_COLS,
-	SPECTRUM_ROW_H,
-} from './spectrogramScroll'
+import { getEngine, subscribeEngine } from '@/audio/engine/audioEngineSingleton'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { appendSpectrumColumn, clearSpectrum } from './spectrogramScroll'
 
 type Props = {
 	open: boolean
+	className?: string
 }
 
-export function SpectralDebugPanel({ open }: Props) {
-	const engine = useAudioEngine()
+export function SpectralDebugPanel({ open, className = '' }: Props) {
+	const engine = useSyncExternalStore(subscribeEngine, getEngine, () => null)
 	const canvasRef = useRef<HTMLCanvasElement>(null)
+	const containerRef = useRef<HTMLDivElement>(null)
 	const rowImageRef = useRef<ImageData | null>(null)
 	const bufRef = useRef<Uint8ClampedArray | null>(null)
 	const freqScratchRef = useRef<Uint8Array | null>(null)
+	const [dims, setDims] = useState({ w: 256, h: 56 })
 
 	useEffect(() => {
-		if (open) return
+		if (!open) return
 		bufRef.current = null
+		rowImageRef.current = null
 	}, [open])
 
 	useEffect(() => {
 		if (!open) return
+		const el = containerRef.current
+		if (!el) return
+		const measure = () => {
+			const cr = el.getBoundingClientRect()
+			const w = Math.max(32, Math.floor(cr.width))
+			const h = Math.max(32, Math.floor(cr.height))
+			setDims((d) => (d.w === w && d.h === h ? d : { w, h }))
+		}
+		measure()
+		const ro = new ResizeObserver(measure)
+		ro.observe(el)
+		return () => ro.disconnect()
+	}, [open])
+
+	useEffect(() => {
+		if (!open || !engine) return
 
 		let raf = 0
 		let frame = 0
+		const W = dims.w
+		const H = dims.h
+
 		const loop = () => {
 			raf = requestAnimationFrame(loop)
 			frame++
@@ -39,17 +57,14 @@ export function SpectralDebugPanel({ open }: Props) {
 			const ctx = canvas?.getContext('2d')
 			if (!ctx || !canvas) return
 
-			const W = SPECTRUM_COLS
-			const H = SPECTRUM_ROW_H
-
 			if (canvas.width !== W || canvas.height !== H) {
 				canvas.width = W
 				canvas.height = H
 			}
 
 			let buf = bufRef.current
-			if (!buf || buf.length !== W * SPECTRUM_ROW_H * 4) {
-				buf = new Uint8ClampedArray(W * SPECTRUM_ROW_H * 4)
+			if (!buf || buf.length !== W * H * 4) {
+				buf = new Uint8ClampedArray(W * H * 4)
 				clearSpectrum(buf)
 				bufRef.current = buf
 			}
@@ -65,13 +80,13 @@ export function SpectralDebugPanel({ open }: Props) {
 				return b
 			}
 
-			appendSpectrumColumn(buf, W, SPECTRUM_ROW_H, readFreq(engine.masterAnalyser))
+			appendSpectrumColumn(buf, W, H, readFreq(engine.masterAnalyser))
 
 			ctx.fillStyle = '#080808'
 			ctx.fillRect(0, 0, W, H)
 
-			if (!rowImageRef.current || rowImageRef.current.width !== W) {
-				rowImageRef.current = ctx.createImageData(W, SPECTRUM_ROW_H)
+			if (!rowImageRef.current || rowImageRef.current.width !== W || rowImageRef.current.height !== H) {
+				rowImageRef.current = ctx.createImageData(W, H)
 			}
 			const rowImg = rowImageRef.current
 			rowImg.data.set(buf)
@@ -80,15 +95,17 @@ export function SpectralDebugPanel({ open }: Props) {
 
 		raf = requestAnimationFrame(loop)
 		return () => cancelAnimationFrame(raf)
-	}, [open, engine])
+	}, [open, engine, dims.w, dims.h])
 
 	if (!open) return null
 
 	return (
-		<div className='fixed bottom-20 right-4 z-[500] max-w-[min(100vw-2rem,280px)] rounded border border-white/15 bg-black/90 p-2 shadow-xl'>
-			<div className='mb-1 text-[10px] uppercase tracking-wide text-neutral-500'>Spectrogram</div>
-			<div className='mb-1 text-[9px] font-mono text-neutral-400'>master out</div>
-			<canvas ref={canvasRef} className='block w-full' style={{ imageRendering: 'pixelated' }} />
+		<div ref={containerRef} className={`min-h-0 min-w-0 h-full flex-1 flex flex-col ${className}`}>
+			<canvas
+				ref={canvasRef}
+				className='block h-full w-full min-h-0'
+				style={{ imageRendering: 'pixelated' }}
+			/>
 		</div>
 	)
 }

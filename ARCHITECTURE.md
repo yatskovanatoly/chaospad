@@ -5,100 +5,226 @@
 ## Стек
 
 - **Next.js**, **React**, **TypeScript**, **Tailwind CSS**
+- **Zustand** — глобальные сторы настроек и состояния пада
 - **Web Audio API** — `AudioEngine` / `Voice`, один **`masterAnalyser`** на суммарный выход
 - **ws** — отдельный процесс ретранслятора WebSocket
 
-## Дерево провайдеров (страница)
+## Принцип
 
-Порядок снаружи внутрь ([`src/app/page.tsx`](src/app/page.tsx)):
-
-1. **`WebSocketProvider`** — соединение с WS, локальное состояние указателя (`pos`, `type`), рассылка и приём JSON с нормализованными координатами `nx`/`ny`.
-2. **`AudioEngineProvider`** — один `AudioContext`, общий мастер-гейн, реверб и **`masterAnalyser`** перед `destination` (сумма всех голосов + сухой/мокрый сигнал).
-3. **`ChaosPad`** оборачивает контент в **`EventsContextProvider`** — снимки событий пада, буфер waveform и API для их обновления.
+Синтез и состояние пада живут **вне React-цикла рендеринга**: в Zustand-сторах и singleton-контроллерах. Компоненты отвечают только за обработку DOM-событий и UI; никакой логики `useEffect`-цепочек, `useRef` для голосов и memo-гимнастики.
 
 ```mermaid
 flowchart TB
-  Ws[WebSocketProvider]
-  Audio[AudioEngineProvider]
-  Chaos[ChaosPad]
-  Ev[EventsContextProvider]
-
-  Ws --> Audio --> Chaos --> Ev
+  subgraph React [React tree - тонкий слой]
+    Pad[PadInputContext pointer handlers]
+    Controls[ChaosPadControls]
+    Viz[Visualizations]
+    Boot[ChaosBootstrap]
+  end
+  subgraph Stores [Zustand vanilla stores]
+    settingsStore
+    padEventStore[padEventStore: local, remotes, xyVersion, selfUser, wsSend]
+  end
+  subgraph Audio [src/audio - vanilla, без React]
+    Engine[engine/audioEngineSingleton lazy]
+    LocalCtl[controllers/localVoiceController]
+    RemoteCtl[controllers/remoteVoicesController]
+    VC[controllers/VoiceController]
+    Sounds[sounds/* - sine, padWaveform, volumeLfoBuffer, pitchLfoBuffer]
+  end
+  Pad -->|publishGesture/Hover| padEventStore
+  Controls -->|селекторы| settingsStore
+  Boot -->|wsBind selfUser, wsSend| padEventStore
+  Boot -->|attachAudioControllers| LocalCtl
+  Boot -->|attachAudioControllers| RemoteCtl
+  Boot -->|subscribe ws| padEventStore
+  padEventStore -->|subscribe local + xyVersion| LocalCtl
+  padEventStore -->|onRemote| RemoteCtl
+  settingsStore -->|subscribe| LocalCtl
+  settingsStore -->|subscribe| RemoteCtl
+  LocalCtl --> VC
+  RemoteCtl --> VC
+  VC --> Engine
+  VC -->|"getSoundMode(id).attach"| Sounds
+  Viz -->|"селектор local.xyArray, xyVersion"| padEventStore
+  Viz -->|селектор vizId| settingsStore
 ```
+
+## Дерево компонентов (страница)
+
+[`src/app/page.tsx`](src/app/page.tsx):
+
+1. **`WebSocketProvider`** — соединение, `userId`, цвет, `send`, `subscribe`. Никакой бизнес-логики, только канал.
+2. **`ChaosPad`** — рендерит [`ChaosBootstrap`](src/components/ChaosPad/ChaosBootstrap.tsx), [`Pad`](src/components/ChaosPad/Pad/Pad.tsx) и [`ChaosPadControls`](src/components/ChaosPad/ChaosPadControls.tsx).
 
 ## Слои данных
 
-### WebSocket ([`src/components/WsContext/`](src/components/WsContext/))
+`src/state/` — UI-сторы (`padEventStore`, `settingsStore`) и хук `usePadEvents` для визуализаций. `src/audio/` — весь синтез: `engine/` (AudioEngine, Voice, singleton, helpers), `sounds/` (виды звуков на интерфейсе `SoundMode`), `controllers/` (мост сторов и движка через `VoiceController`), `padWaveform.ts` (буфер бинов).
 
-- `userId`, цвет пользователя, `pos: { nx, ny }`, `type` жеста (`start` / `move` / `stop`), последнее входящее сообщение от других клиентов (`message`).
-- Координаты **нормализованы к вьюпорту** (0…1).
-- Типы: [`src/type.ts`](src/type.ts).
+### State stores ([`src/state/`](src/state/))
 
-### Audio ([`src/components/AudioEngineContext/`](src/components/AudioEngineContext/))
+#### [`settingsStore`](src/state/settingsStore.ts)
 
-- **`AudioEngine`**: `convolver` → `convolverGain` → `masterGain` → **`masterAnalyser`** → `destination`. Импульс ревёрба задаётся в [`createImpulseResponse`](src/components/AudioEngineContext/helpers/createImpulseResponse.ts); контекст с `latencyHint: 'playback'`.
-- **`Voice`**: `OscillatorNode` → гейн → **напрямую** в `masterGain` и в `convolver` (без анализатора на голос). Частота и гейн из `(nx, ny)` через [`getSoundParams`](src/components/AudioEngineContext/helpers/getSoundParams.ts) и квантайз. Режимы: **`setSoundMode('sine')`** или **`setSoundMode('padWaveform', bins)`** ([`binsToPeriodicWave`](src/components/AudioEngineContext/helpers/binsToPeriodicWave.ts)); для custom-волны гейн слегка компенсируется относительно синуса.
-- Локальный голос — [`useChaosAudio`](src/components/ChaosPad/hooks/useChaosAudio.ts), режим звука — [`sounds/index.ts`](src/components/ChaosPad/sounds/index.ts). Удалённые голоса — [`useChaosWebSocket`](src/components/ChaosPad/hooks/useChaosWs.ts) + [`handleRemoteAudio`](src/components/ChaosPad/helpers/handleRemoteAudio.ts): тот же **`soundModeId`**, что у слушателя; для **Buffer** на каждого `userId` свой `Float32Array` и сегментная интерполяция по `nx`/`ny`, плюс троттлинг `setSoundMode`.
+Хранит `vizId`, `spectralDebugOpen`, `release`, `reverbLevel`, `volume`, `quantize`, `soundModeId` и сеттеры. Используется **через селекторы**: `useSettingsStore(s => s.volume)`.
 
-### Events ([`src/components/ChaosPad/EventsContext/`](src/components/ChaosPad/EventsContext/))
+#### [`padEventStore`](src/state/padEventStore.ts)
 
-Публичный контракт описан в **`PadEventsApi`** ([`padEvents.types.ts`](src/components/ChaosPad/EventsContext/padEvents.types.ts)) и реэкспортируется из [`index.ts`](src/components/ChaosPad/EventsContext/index.ts).
+| Поле | Назначение |
+|------|------------|
+| `selfUser` | `{ userId, color }` локального клиента (заполняется в `ChaosBootstrap` через `wsBind`). |
+| `wsSend` | Инжектируемый трансмиттер для WS-сообщений. |
+| `local` | Снимок последнего локального жеста (`UserPadState`), включая собственный `xyArray` (256 бинов). На `wsBind` создаётся shell с `updatedAt: 0` и пустым `xyArray` — в этот же буфер пишет hover до жеста. |
+| `remotes` | Карта последних снимков по `userId`; у каждого свой `xyArray`. |
+| `xyVersion` | Глобальный счётчик инкрементируется при любом изменении бинов (hover / жест / remote). Используется визуализациями и контроллерами как сигнал «бины поменялись». |
 
-| Часть API | Назначение |
-|-----------|------------|
-| **`local`** | Снимок последнего **локального** события из WebSocket: `VisEvent` (`nx`, `ny`, `color`, `type`) — жест **с нажатием** (`start` / `move` / `stop`). |
-| **`remote`** | Последнее **удалённое** событие: `RemotePadEvent` + `userId`. |
-| **`padWaveform`** | Стор буфера формы волны: `PAD_WAVEFORM_BINS` (256), [`applySegment`](src/components/ChaosPad/EventsContext/padWaveform.ts) по сегментам между точками, подписка на версию через **`usePadWaveform`**. |
-| **`emitPadHover`** | Вызывается из UI при движении по паду **без зажатой ЛКМ** (или touch): обновляет буфер waveform. При **зажатой** кнопке мыши буфер не пишется из этой точки. |
+Действия: `wsBind`, `publishGesture`, `publishHover`, `applyRemoteEvent`. Side-channel `onRemote(cb)` — низкоуровневая подписка на удалённые сообщения (используется `remoteVoicesController` чтобы реагировать **на каждое** WS-сообщение, без диффа).
 
-Хуки:
+#### [`audioEngineSingleton`](src/audio/engine/audioEngineSingleton.ts)
 
-- **`useEvents()`** — полный **`PadEventsApi`**.
-- **`usePadLocal()`** / **`usePadRemote()`** — только снимки `local` / `remote`.
-- **`usePadWaveform()`** — `bins` + `version` для отрисовки и аудио.
-- **`usePadEventHandlers({ onLocal, onRemote, ... })`** — подписка на локальные/удалённые события для визуализаций (троттлинг локального тика).
+Ленивая инициализация `AudioEngine` через `getOrCreateEngine()`. Создаётся при первом жесте, чтобы соблюсти autoplay policy. `subscribeEngine(cb)` для UI, которому нужно реактивно узнавать о появлении/закрытии engine (например, [`SpectralDebugPanel`](src/components/ChaosPad/spectralDebug/SpectralDebugPanel.tsx)).
 
-### ChaosPad UI ([`src/components/ChaosPad/ChaosPad.tsx`](src/components/ChaosPad/ChaosPad.tsx))
+### Audio engine ([`src/audio/engine/`](src/audio/engine/))
 
-- Область захвата указателя; переключатели визуализации ([`visualizations/index.ts`](src/components/ChaosPad/visualizations/index.ts)) и звука ([`sounds/index.ts`](src/components/ChaosPad/sounds/index.ts)).
-- Поверх выбранного эффекта — **`WaveformBufferViz`** (WebGL: заливка + линия по буферу).
-- Опционально **Spectrum debug** — [`SpectralDebugPanel`](src/components/ChaosPad/spectralDebug/SpectralDebugPanel.tsx): одна спектрограмма с **`engine.masterAnalyser`** (общий выход).
+- **`AudioEngine`** ([`AudioEngine.ts`](src/audio/engine/AudioEngine.ts)): master-цепочка `convolver` → `convolverGain` → `masterGain` → `tremoloGain` → **`masterAnalyser`** → `destination`. Импульс ревёрба — [`createImpulseResponse`](src/audio/engine/helpers/createImpulseResponse.ts); контекст с `latencyHint: 'playback'`. Метод `createVoice(position, quantize)` — фабрика голосов.
+- **`Voice`** ([`Voice.ts`](src/audio/engine/Voice.ts)): `OscillatorNode` → собственный гейн → `masterGain` и `convolver`. Знает про позицию (`updatePosition`/`refreshPosition`), квантайз, `pitchLfoMul`. **Не знает о видах звуков**: предоставляет примитивы `setOscillatorType('sine')` / `setOscillatorWave(PeriodicWave)` / `setPitchLfoMul(m)`.
 
-## Визуализации ([`src/components/ChaosPad/visualizations/`](src/components/ChaosPad/visualizations/))
+### Sound modes ([`src/audio/sounds/`](src/audio/sounds/))
 
-Реестр: Glow, Squares, WebGL — подписка через **`usePadEventHandlers`** и/или **`usePadWaveform`** / **`useViewportSize`**, частицы — локальное состояние (`useParticles`).
+Каждый вид звука — самодостаточный модуль, реализующий интерфейс `SoundMode` ([`types.ts`](src/audio/sounds/types.ts)):
 
-## Сервер WebSocket
+```typescript
+type SoundMode = {
+  id: SoundModeId
+  label: string
+  attach(ctx: { engine, voice, getXyArray }): SoundAttachment
+}
 
-[`src/ws-server.mjs`](src/ws-server.mjs) — broadcast входящих сообщений всем остальным клиентам. Порт по умолчанию **3003**.
+type SoundAttachment = {
+  onXyUpdate?: () => void   // вызывается при смене бинов
+  dispose: () => void
+}
+```
 
-Клиентский URL: [`getPublicWebSocketUrl`](src/config.ts) из `NEXT_PUBLIC_WS_URL` (по умолчанию `ws://localhost:3003`).
+Реестр — [`registry.ts`](src/audio/sounds/registry.ts): массив `SOUND_MODES` + `getSoundMode(id)`. Добавление нового вида звука = создать `sounds/<id>/<id>Mode.ts` + добавить в реестр и в `SoundModeId`.
 
-Скрипт **`npm run dev:ws`** поднимает Next и WS-процесс параллельно ([`package.json`](package.json)).
+Текущие реализации:
+
+- [`sine/sineMode.ts`](src/audio/sounds/sine/sineMode.ts) — `voice.setOscillatorType('sine')`.
+- [`padWaveform/padWaveformMode.ts`](src/audio/sounds/padWaveform/padWaveformMode.ts) — `voice.setOscillatorWave(binsToPeriodicWave(...))`. `onXyUpdate` пересчитывает wave с **внутренним throttle 110ms** через [`shared/throttle.ts`](src/audio/sounds/shared/throttle.ts). На `dispose` возвращает `'sine'`.
+- [`volumeLfoBuffer/volumeLfoBufferMode.ts`](src/audio/sounds/volumeLfoBuffer/volumeLfoBufferMode.ts) — rAF-цикл из [`shared/bufferLfoLoop.ts`](src/audio/sounds/shared/bufferLfoLoop.ts) пишет sample в `engine.tremoloGain.gain.value`.
+- [`pitchLfoBuffer/pitchLfoBufferMode.ts`](src/audio/sounds/pitchLfoBuffer/pitchLfoBufferMode.ts) — тот же rAF-цикл, sample → `voice.setPitchLfoMul(...)`.
+
+`shared/bins.ts` — `EMPTY_EPS`, `maxBin`, `sampleBinsAtPhase` для всех потребителей бинов.
+
+### Controllers (vanilla, без React) ([`src/audio/controllers/`](src/audio/controllers/))
+
+#### [`VoiceController`](src/audio/controllers/VoiceController.ts)
+
+Инкапсулирует один `Voice` + активный `SoundAttachment`. API:
+
+- `setMode(id)` — `dispose` старого attachment → `attach` нового.
+- `setPosition(nx, ny)`, `setQuantize(q)`, `notifyXyUpdate()`, `stop(release)`.
+
+Контроллеры local/remote работают **только** через `VoiceController` — switch по `soundModeId` отсутствует.
+
+#### [`localVoiceController`](src/audio/controllers/localVoiceController.ts)
+
+Подписан на `padEventStore.local`, `padEventStore.xyVersion` и `settingsStore`:
+
+- `local.type === 'start'` → `getOrCreateEngine()`, resume, `new VoiceController(...)` с текущим `soundModeId`.
+- `local.type === 'move'` → `requestAnimationFrame`-троттлинг, `vc.setPosition(...)`.
+- `local.type === 'stop'` → `vc.stop(release)`.
+- `xyVersion` меняется → `vc.notifyXyUpdate()` (throttle/реакция — внутри активного режима).
+- Изменение `volume`/`reverbLevel` → `engine.set*`; `quantize` → `vc.setQuantize`; `soundModeId` → `vc.setMode`.
+
+#### [`remoteVoicesController`](src/audio/controllers/remoteVoicesController.ts)
+
+Подписан на `padEventStore.onRemote` и `settingsStore`. Хранит `Map<userId, VoiceController>`. На `start` создаёт VC с `getXyArray = () => padEventStore.getState().remotes[userId]?.xyArray`; на `move` — `vc.setPosition` + `vc.notifyXyUpdate()`; на `stop` — `vc.stop()` + `delete`. На смену settings прокидывает `setQuantize` / `setMode` всем активным VC.
+
+#### [`attachAudioControllers`](src/audio/controllers/index.ts)
+
+Один публичный entry-point для бутстрапа: монтирует оба контроллера и возвращает `detach`.
+
+### Bootstrap ([`ChaosBootstrap.tsx`](src/components/ChaosPad/ChaosBootstrap.tsx))
+
+Единственный React-узел, связывающий WS с состоянием. В `useEffect`:
+
+- `padEventStore.wsBind({ selfUser, wsSend })`,
+- `attachAudioControllers()`,
+- `subscribe(msg => padEventStore.applyRemoteEvent(msg))`.
+
+Cleanup: detach контроллеров и `closeEngine()`.
+
+### Публичный API модуля audio ([`src/audio/index.ts`](src/audio/index.ts))
+
+Снаружи `src/audio/` доступны только: `attachAudioControllers`, `soundModes`, `defaultSoundModeId`, `SoundModeId`, `getEngine`, `subscribeEngine`. `AudioEngine`, `Voice`, `VoiceController` и сами `SoundMode`-объекты — внутренние.
+
+### Pad waveform buffer ([`src/audio/padWaveform.ts`](src/audio/padWaveform.ts))
+
+`PAD_WAVEFORM_BINS = 256`. Функции `applySample` / `applySegment` мутируют `Float32Array` бинов in-place; `padEventStore` использует их в `publishGesture` / `publishHover` / `applyRemoteEvent` поверх соответствующих `xyArray`.
+
+## Pad UI
+
+- [`Pad`](src/components/ChaosPad/Pad/Pad.tsx) → [`PadSurfaceProvider`](src/components/ChaosPad/Pad/PadSurfaceContext.tsx) (размеры) → [`PadInputProvider`](src/components/ChaosPad/Pad/PadInputContext.tsx) (pointer handlers, дёргают `padEventStore.publishGesture/publishHover`).
+- [`PadLayer`](src/components/ChaosPad/Pad/PadLayer.tsx) рендерит активную визуализацию ([`ActiveViz`](src/components/ChaosPad/Pad/ActiveViz.tsx)) + [`WaveformBufferViz`](src/components/ChaosPad/Pad/visualizations/WaveformBufferViz.tsx) поверх + прозрачный capture-div.
+
+## Визуализации ([`src/components/ChaosPad/Pad/visualizations/`](src/components/ChaosPad/Pad/visualizations/))
+
+- **Glow** / **Squares** — частицы через [`useParticles`](src/components/ChaosPad/Pad/visualizations/useParticles.ts), подписка через [`usePadEvents`](src/state/hooks/usePadEvents.ts) (троттлинг локального тика).
+- **WebGL** — pixel shader, читает позицию из `padEventStore.local`/`remotes`.
+- **WaveformBufferViz** — линия + заливка по `padEventStore(s => s.local?.xyArray)`, перерисовка по `s.xyVersion`.
 
 ## Поток: жест → звук и буфер
 
-1. **Указатель с нажатием** обновляет `WsContext` (`setPos` / `setType`) → в **`EventsContext`** попадает **`local`** → звук через **`useChaosAudio`**, визуализации через **`usePadEventHandlers`**.
-2. **Движение без зажатой ЛКМ** (или touch) по паду вызывает **`emitPadHover`** → **`padWaveform.apply`** (сегменты) — **только** так формируется буфер waveform для режима Buffer и визуализации волны; **не** из `local` move.
-3. **`useChaosAudio`** в режиме Buffer подписан на **`padWaveform`** и с троттлингом обновляет `setPeriodicWave`.
-4. Удалённые жесты обновляют удалённые голоса и **`remote`**; их буферы waveform на клиенте — в **`useChaosWs`** (те же бины и интерполяция).
+1. Pointer event → `PadInputContext` → `padEventStore.publishGesture`/`publishHover` → обновляет `local`, мутирует `local.xyArray`, инкрементит `xyVersion`, шлёт в WS через `wsSend`.
+2. `padEventStore.subscribe(local)` → `localVoiceController` создаёт/обновляет голос через `VoiceController`; rAF-троттлинг для `move`.
+3. `padEventStore.subscribe(xyVersion)` → `vc.notifyXyUpdate()` → активный `SoundAttachment.onXyUpdate?.()` (например, `padWaveformMode` пересчитает `PeriodicWave` с внутренним throttle).
+4. WS приём → `ChaosBootstrap` → `padEventStore.applyRemoteEvent` → обновляет `remotes[uid]` и его `xyArray`, инкрементит `xyVersion`, эмит `onRemote`.
+5. `padEventStore.onRemote` → `remoteVoicesController` создаёт/обновляет remote `VoiceController`.
+6. Изменения `settingsStore` (volume/reverb/quantize/soundMode) → контроллеры реагируют через `subscribe` с диффом, без перерендера React.
+
+## Дисциплина селекторов
+
+В компонентах **всегда** использовать узкие селекторы: `useStore(s => s.field)` (или `useShallow` если нужен объект). Это и даёт основной выигрыш Zustand — без него получится тот же провайдер по перерендеру.
+
+## Сервер WebSocket
+
+[`src/ws-server.mjs`](src/ws-server.mjs) — broadcast входящих сообщений всем остальным клиентам. Порт по умолчанию **3003**. Клиентский URL — [`getPublicWebSocketUrl`](src/config.ts) из `NEXT_PUBLIC_WS_URL`. Скрипт `npm run dev:ws` поднимает Next и WS параллельно ([`package.json`](package.json)).
 
 ## Структура каталогов (сокращённо)
 
 ```
 src/
   app/
+  audio/                       # весь non-React аудио-слой
+    index.ts                   # публичный API: attachAudioControllers, soundModes, getEngine
+    engine/                    # AudioEngine, Voice, audioEngineSingleton, helpers
+      helpers/                 # binsToPeriodicWave, createImpulseResponse, quantizeFreq,
+                               # updateSoundFromPosition, getSoundParams
+    sounds/                    # виды звуков (strategy pattern)
+      types.ts                 # SoundMode, SoundContext, SoundAttachment, SoundModeId
+      registry.ts              # SOUND_MODES + getSoundMode(id)
+      sine/                    # sineMode
+      padWaveform/             # padWaveformMode (внутренний throttle)
+      volumeLfoBuffer/         # volumeLfoBufferMode
+      pitchLfoBuffer/          # pitchLfoBufferMode
+      shared/                  # bins, bufferLfoLoop, throttle
+    controllers/               # local + remote + общий VoiceController
+    padWaveform.ts             # буфер бинов (applySample, applySegment)
   components/
-    AudioEngineContext/
-    WsContext/
+    WsContext/                 # тонкий канал ws (без бизнес-логики)
     ChaosPad/
       ChaosPad.tsx
-      sounds/
-      EventsContext/       # padEvents.types, padWaveform, провайдер, хуки
-      spectralDebug/       # спектрограмма с masterAnalyser
-      hooks/                 # useChaosAudio, useChaosWs
+      ChaosBootstrap.tsx       # WS bridge + attachAudioControllers
+      ChaosPadControls.tsx
+      padEvents.types.ts       # UserPadState (с xyArray), VisEvent, RemotePadEvent
+      Pad/                     # PadSurface, PadInput, PadLayer, ActiveViz, visualizations/
+      spectralDebug/           # спектрограмма с masterAnalyser
       helpers/
-      visualizations/
+  state/
+    padEventStore.ts           # local + remotes + xyVersion + onRemote
+    settingsStore.ts
+    hooks/usePadEvents.ts
   config.ts
   type.ts
   ws-server.mjs

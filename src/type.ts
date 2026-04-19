@@ -1,25 +1,21 @@
-import { Dispatch, RefObject, SetStateAction } from 'react'
-import { MotionType } from './components/WsContext/WsContextProvider'
-
-export type WSContextType = {
-	wsRef: RefObject<WebSocket | null>
-	type: MotionType
-	setType: Dispatch<SetStateAction<MotionType>>
-	userId: string | undefined
-	color: string
-	pos: Position | undefined
-	setPos: Dispatch<SetStateAction<Position | undefined>>
-	message: Message
-}
-
-type Message =
-	| (Pick<WSContextType, 'color' | 'userId' | 'type'> & {
-		nx: number
-		ny: number
-	})
-	| undefined
+import type { MotionType } from './components/WsContext/WsContextProvider'
 
 export type Position = {
 	nx: number
 	ny: number
+}
+
+export type WireMessage = {
+	userId: string
+	color: string
+	type: MotionType
+	nx: number
+	ny: number
+}
+
+export type WSContextType = {
+	userId: string
+	color: string
+	send: (msg: WireMessage) => void
+	subscribe: (listener: (msg: WireMessage) => void) => () => void
 }
