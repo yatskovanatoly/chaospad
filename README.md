@@ -1,34 +1,34 @@
 # Chaos Pad
 
-Полноэкранный «пад» для управления синтезом по указателю: **Web Audio**, синхронизация жестов по **WebSocket**, несколько визуализаций и режим **Buffer** (форма волны из рисунка по паду).
+A full-screen pad for pointer-driven synthesis: **Web Audio**, gesture sync over **WebSocket**, several visualizations, and a **Buffer** mode (waveform shaped by drawing on the pad).
 
-Подробно устройство кода и потоков данных — в **[`ARCHITECTURE.md`](ARCHITECTURE.md)**.
+See **[`ARCHITECTURE.md`](ARCHITECTURE.md)** for how the code and data flow are structured.
 
-## Запуск
+## Run
 
 ```bash
 npm install
 ```
 
-Только фронт (Next.js):
+Frontend only (Next.js):
 
 ```bash
 npm run dev
 ```
 
-Фронт + ретранслятор WebSocket (по умолчанию порт **3003**):
+Frontend + WebSocket relay (default port **3003**):
 
 ```bash
 npm run dev:ws
 ```
 
-Открыть [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000).
 
-## Переменные окружения
+## Environment
 
-- **`NEXT_PUBLIC_WS_URL`** — URL WebSocket (по умолчанию `ws://localhost:3003`). См. [`src/config.ts`](src/config.ts).
+- **`NEXT_PUBLIC_WS_URL`** — WebSocket URL (default `ws://localhost:3003`). See [`src/config.ts`](src/config.ts).
 
-## Сборка
+## Build
 
 ```bash
 npm run build
