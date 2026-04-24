@@ -1,0 +1,148 @@
+@startuml architecture-modules
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+title Chaos Pad — module / class diagram (high level)
+
+' === State (Zustand) ===
+package "src/state" {
+  class padEventStore <<store>> {
+    + local: UserPadState | null
+    + remotes: Record<userId, UserPadState>
+    + xyVersion: number
+    + selfUser, wsSend
+    + wsBind()
+    + publishGesture()
+    + publishHover()
+    + applyRemoteEvent()
+    + onRemote(cb)
+  }
+  class settingsStore <<store>> {
+    + soundModeId, volume, reverbLevel, quantize, release, vizId, ...
+  }
+  class usePadEvents <<hook>> {
+    + subscribes padEventStore for viz
+  }
+}
+
+' === Audio engine ===
+package "src/audio/engine" {
+  class AudioEngine {
+    + ctx: AudioContext
+    + masterGain, tremoloGain, convolver, masterAnalyser
+    + setVolume()
+    + setReverbLevel()
+    + createVoice() : Voice
+  }
+  class Voice {
+    + oscillator: OscillatorNode
+    + updatePosition()
+    + refreshPosition()
+    + setOscillatorType()
+    + setOscillatorWave()
+    + setPitchLfoMul()
+    + stop()
+  }
+  class audioEngineSingleton <<singleton>> {
+    + getEngine()
+    + getOrCreateEngine()
+    + subscribeEngine()
+    + closeEngine()
+  }
+}
+
+AudioEngine ..> Voice : creates
+audioEngineSingleton ..> AudioEngine : holds 0..1
+
+' === Sounds (strategy) ===
+package "src/audio/sounds" {
+  interface SoundMode {
+    + id: SoundModeId
+    + label: string
+    + attach(ctx: SoundContext): SoundAttachment
+  }
+  class SoundContext <<record>> {
+    + engine: AudioEngine
+    + voice: Voice
+    + getXyArray(): Float32Array | undefined
+  }
+  class SoundAttachment <<record>> {
+    + onXyUpdate?()
+    + dispose()
+  }
+  class registry <<module>> {
+    + SOUND_MODES
+    + getSoundMode(id)
+  }
+  package "implementations" {
+    class sineMode
+    class padWaveformMode
+    class volumeLfoBufferMode
+    class pitchLfoBufferMode
+  }
+}
+
+SoundMode ..> SoundContext
+SoundMode ..> SoundAttachment
+registry ..> SoundMode : registers
+sineMode ..|> SoundMode
+padWaveformMode ..|> SoundMode
+volumeLfoBufferMode ..|> SoundMode
+pitchLfoBufferMode ..|> SoundMode
+
+' === Controllers ===
+package "src/audio/controllers" {
+  class VoiceController {
+    - voice: Voice
+    - attachment: SoundAttachment
+    + setMode()
+    + setPosition()
+    + setQuantize()
+    + notifyXyUpdate()
+    + stop()
+  }
+  class localVoiceController <<module>> {
+    + attachLocalVoiceController(): detach
+  }
+  class remoteVoicesController <<module>> {
+    + attachRemoteVoicesController(): detach
+  }
+  class attachAudioControllers <<module>> {
+    + wires local + remote
+  }
+}
+
+VoiceController o-- Voice
+VoiceController ..> SoundMode : getSoundMode().attach
+VoiceController ..> registry
+
+localVoiceController ..> VoiceController : creates
+localVoiceController ..> padEventStore
+localVoiceController ..> settingsStore
+localVoiceController ..> audioEngineSingleton
+
+remoteVoicesController ..> VoiceController : Map per userId
+remoteVoicesController ..> padEventStore
+remoteVoicesController ..> settingsStore
+remoteVoicesController ..> audioEngineSingleton
+
+attachAudioControllers ..> localVoiceController
+attachAudioControllers ..> remoteVoicesController
+
+' === React bootstrap ===
+package "src/components/ChaosPad" {
+  class ChaosBootstrap <<component>> {
+    + wsBind, attachAudioControllers, WS subscribe
+  }
+}
+
+ChaosBootstrap ..> padEventStore
+ChaosBootstrap ..> attachAudioControllers
+
+' === Public audio facade ===
+note right of registry
+  **src/audio/index.ts** re-exports:
+  attachAudioControllers, getEngine, subscribeEngine,
+  soundModes, defaultSoundModeId, SoundModeId
+end note
+
+@enduml
