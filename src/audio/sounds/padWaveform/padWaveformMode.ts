@@ -23,7 +23,6 @@ export const padWaveformMode: SoundMode = {
 			onXyUpdate: throttled.trigger,
 			dispose: () => {
 				throttled.cancel()
-				voice.setOscillatorType('sine')
 			},
 		}
 	},

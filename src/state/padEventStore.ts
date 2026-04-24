@@ -77,13 +77,19 @@ export const padEventStore = create<PadEventStoreState>((set, get) => ({
 
 		const xyArray = state.local?.xyArray ?? new Float32Array(PAD_WAVEFORM_BINS)
 
-		if (type === 'start') lastLocal.current = null
+		if (type === 'start') {
+			lastLocal.current = null
+			lastHover.current = null
+		}
 		if (type === 'start' || type === 'move') {
 			const prev = lastLocal.current
 			applySegment(xyArray, prev?.nx ?? nx, prev?.ny ?? ny, nx, ny)
 			lastLocal.current = { nx, ny }
 		}
-		if (type === 'stop') lastLocal.current = null
+		if (type === 'stop') {
+			lastLocal.current = null
+			lastHover.current = { nx, ny }
+		}
 
 		const next: UserPadState = {
 			userId: self.userId,
