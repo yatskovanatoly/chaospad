@@ -1,10 +1,10 @@
 'use client'
 
 import { useSettingsStore } from '@/state/settingsStore'
-import { visualizations } from './visualizations'
+import { vizBySoundMode } from './visualizations'
 
 export function ActiveViz() {
-	const vizId = useSettingsStore((s) => s.vizId)
-	const Comp = visualizations.find((v) => v.id === vizId)?.component ?? visualizations[0].component
+	const soundModeId = useSettingsStore((s) => s.soundModeId)
+	const Comp = vizBySoundMode[soundModeId] ?? vizBySoundMode.sine
 	return <Comp />
 }

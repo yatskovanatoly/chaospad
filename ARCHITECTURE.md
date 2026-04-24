@@ -1,6 +1,6 @@
 # Chaos Pad — architecture
 
-A **Next.js** (App Router) web app: a full-screen pad for touch/mouse-driven sound, pointer sync over **WebSocket**, visualization modes, and a debug spectrogram tapped from the **shared** audio output.
+A **Next.js** (App Router) web app: a full-screen pad for touch/mouse-driven sound, pointer sync over **WebSocket**, per–sound-mode pad visualizations (via `soundModeId`), and a debug spectrogram tapped from the **shared** audio output.
 
 ## Stack
 
@@ -30,7 +30,7 @@ flowchart TB
     LocalCtl[controllers/localVoiceController]
     RemoteCtl[controllers/remoteVoicesController]
     VC[controllers/VoiceController]
-    Sounds[sounds/* - sine, padWaveform, volumeLfoBuffer, pitchLfoBuffer]
+    Sounds[sounds/* - sine, padWaveform, volumeLfo, pitchLfo, speedPitch]
   end
   Pad -->|publishGesture/Hover| padEventStore
   Controls -->|selectors| settingsStore
@@ -46,8 +46,8 @@ flowchart TB
   RemoteCtl --> VC
   VC --> Engine
   VC -->|"getSoundMode(id).attach"| Sounds
-  Viz -->|"selector local.xyArray, xyVersion"| padEventStore
-  Viz -->|selector vizId| settingsStore
+  Viz -->|"xyArray, xyVersion"| padEventStore
+  Viz -->|soundModeId → ActiveViz component| settingsStore
 ```
 
 ## Component tree (page)
@@ -65,7 +65,7 @@ flowchart TB
 
 #### [`settingsStore`](src/state/settingsStore.ts)
 
-Holds `vizId`, `spectralDebugOpen`, `release`, `reverbLevel`, `volume`, `quantize`, `soundModeId`, and setters. Use **narrow selectors**: `useSettingsStore(s => s.volume)`.
+Holds `spectralDebugOpen`, `release`, `reverbLevel`, `volume`, `quantize`, `soundModeId`, and setters. Use **narrow selectors**: `useSettingsStore(s => s.volume)`. The on-pad **visualization** (Glow, WebGL, Squares, or [`SpeedViz`](src/components/ChaosPad/Pad/visualizations/SpeedViz.tsx)) is chosen from [`vizBySoundMode`](src/components/ChaosPad/Pad/visualizations/vizBySoundMode.ts) by `soundModeId` — not a separate UI toggle.
 
 #### [`padEventStore`](src/state/padEventStore.ts)
 
@@ -73,7 +73,7 @@ Holds `vizId`, `spectralDebugOpen`, `release`, `reverbLevel`, `volume`, `quantiz
 |----------|----------|
 | `selfUser` | `{ userId, color }` for the local client (filled in `ChaosBootstrap` via `wsBind`). |
 | `wsSend` | Injected WS sender for outgoing messages. |
-| `local` | Last local gesture snapshot (`UserPadState`), including its own `xyArray` (256 bins). On `wsBind`, a shell is created with `updatedAt: 0` and an empty `xyArray` — hover writes into that buffer until a gesture starts. |
+| `local` | Last local gesture snapshot (`UserPadState`), including `xyArray` (256 bins) and [`PadMotionEnrichment`](src/type.ts) (`gestureSpeed01`, `dtMs` per segment). Values are **supplied by the pointer layer** (`PadInputContext` + `padMotionMetrics`) and echoed on the wire in `WireMessage`; the store does not recompute them for local. Remotes use sender fields when present, else a receive-time fallback. On `wsBind`, a shell is created with `updatedAt: 0` and an empty `xyArray`. |
 | `remotes` | Map of latest snapshots per `userId`; each has its own `xyArray`. |
 | `xyVersion` | Global counter incremented on any bin change (hover / gesture / remote). Visualizations and controllers use it as a “bins changed” signal. |
 
@@ -113,6 +113,7 @@ Current implementations:
 - [`padWaveform/padWaveformMode.ts`](src/audio/sounds/padWaveform/padWaveformMode.ts) — `voice.setOscillatorWave(binsToPeriodicWave(...))`. `onXyUpdate` recomputes the wave with **internal 110ms throttle** via [`shared/throttle.ts`](src/audio/sounds/shared/throttle.ts). On `dispose`, restores `'sine'`.
 - [`volumeLfoBuffer/volumeLfoBufferMode.ts`](src/audio/sounds/volumeLfoBuffer/volumeLfoBufferMode.ts) — rAF loop from [`shared/bufferLfoLoop.ts`](src/audio/sounds/shared/bufferLfoLoop.ts) writes sample into `engine.tremoloGain.gain.value`.
 - [`pitchLfoBuffer/pitchLfoBufferMode.ts`](src/audio/sounds/pitchLfoBuffer/pitchLfoBufferMode.ts) — same rAF loop, sample → `voice.setPitchLfoMul(...)`.
+- [`speedPitch/speedPitchMode.ts`](src/audio/sounds/speedPitch/speedPitchMode.ts) — rAF reads `local.gestureSpeed01` and maps it through a power curve into `voice.setPitchLfoMul` (faster pointer → higher pitch).
 
 `shared/bins.ts` — `EMPTY_EPS`, `maxBin`, `sampleBinsAtPhase` for all bin consumers.
 
@@ -166,17 +167,19 @@ From outside `src/audio/` only: `attachAudioControllers`, `soundModes`, `default
 ## Pad UI
 
 - [`Pad`](src/components/ChaosPad/Pad/Pad.tsx) → [`PadSurfaceProvider`](src/components/ChaosPad/Pad/PadSurfaceContext.tsx) (size) → [`PadInputProvider`](src/components/ChaosPad/Pad/PadInputContext.tsx) (pointer handlers call `padEventStore.publishGesture` / `publishHover`).
-- [`PadLayer`](src/components/ChaosPad/Pad/PadLayer.tsx) renders the active viz ([`ActiveViz`](src/components/ChaosPad/Pad/ActiveViz.tsx)) + [`WaveformBufferViz`](src/components/ChaosPad/Pad/visualizations/WaveformBufferViz.tsx) on top + transparent capture div.
+- [`PadLayer`](src/components/ChaosPad/Pad/PadLayer.tsx) renders the active visualization ([`ActiveViz`](src/components/ChaosPad/Pad/ActiveViz.tsx)) + [`WaveformBufferViz`](src/components/ChaosPad/Pad/visualizations/WaveformBufferViz.tsx) on top + transparent capture div.
 
 ## Visualizations ([`src/components/ChaosPad/Pad/visualizations/`](src/components/ChaosPad/Pad/visualizations/))
 
+- **Which mode is shown** — [`ActiveViz`](src/components/ChaosPad/Pad/ActiveViz.tsx) selects a React component from [`vizBySoundMode`](src/components/ChaosPad/Pad/visualizations/vizBySoundMode.ts) using `useSettingsStore(s => s.soundModeId)` (e.g. `speedPitch` → `SpeedViz`, `sine` → `GlowViz`, `padWaveform` → `WebGLViz`).
 - **Glow** / **Squares** — particles via [`useParticles`](src/components/ChaosPad/Pad/visualizations/useParticles.ts), subscription via [`usePadEvents`](src/state/hooks/usePadEvents.ts) (local tick throttle).
 - **WebGL** — pixel shader reads position from `padEventStore.local` / `remotes`.
-- **WaveformBufferViz** — line + fill from `padEventStore(s => s.local?.xyArray)`, redraw on `s.xyVersion`.
+- **SpeedViz** — red circle at `local.nx/ny` with size driven by `gestureSpeed01` (only while `start` / `move`).
+- **WaveformBufferViz** — global overlay (not tied to `soundModeId`): line + fill from `padEventStore(s => s.local?.xyArray)`, redraw on `s.xyVersion`.
 
 ## Flow: gesture → sound and buffer
 
-1. Pointer event → `PadInputContext` → `padEventStore.publishGesture` / `publishHover` → updates `local`, mutates `local.xyArray`, increments `xyVersion`, sends over WS via `wsSend`.
+1. Pointer event → `PadInputContext` (enrichment: `gestureSpeed01`, `dtMs` via [`padMotionMetrics`](src/pad/padMotionMetrics.ts)) → `padEventStore.publishGesture` / `publishHover` → updates `local`, mutates `local.xyArray`, increments `xyVersion`, sends [`WireMessage`](src/type.ts) over WS via `wsSend`.
 2. `padEventStore.subscribe(local)` → `localVoiceController` creates/updates voice via `VoiceController`; rAF throttle for `move`.
 3. `padEventStore.subscribe(xyVersion)` → `vc.notifyXyUpdate()` → active `SoundAttachment.onXyUpdate?.()` (e.g. `padWaveformMode` recomputes `PeriodicWave` with internal throttle).
 4. WS receive → `ChaosBootstrap` → `padEventStore.applyRemoteEvent` → updates `remotes[uid]` and its `xyArray`, increments `xyVersion`, emits `onRemote`.
@@ -208,6 +211,7 @@ src/
       padWaveform/             # padWaveformMode (internal throttle)
       volumeLfoBuffer/         # volumeLfoBufferMode
       pitchLfoBuffer/          # pitchLfoBufferMode
+      speedPitch/              # speedPitchMode (gesture speed → pitch)
       shared/                  # bins, bufferLfoLoop, throttle
     controllers/               # local + remote + shared VoiceController
     padWaveform.ts             # bin buffer (applySample, applySegment)
@@ -217,8 +221,9 @@ src/
       ChaosPad.tsx
       ChaosBootstrap.tsx       # WS bridge + attachAudioControllers
       ChaosPadControls.tsx
-      padEvents.types.ts       # UserPadState (with xyArray), VisEvent, RemotePadEvent
-      Pad/                     # PadSurface, PadInput, PadLayer, ActiveViz, visualizations/
+      padEvents.types.ts       # UserPadState & PadMotionEnrichment, PadInputEvent
+      pad/padMotionMetrics.ts  # gestureSpeed01FromSegment (shared input + wire fallback)
+      Pad/                     # PadSurface, PadInput, PadLayer, ActiveViz, visualizations/ (incl. vizBySoundMode)
       spectralDebug/           # spectrogram from masterAnalyser
       helpers/
   state/

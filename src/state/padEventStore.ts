@@ -4,11 +4,12 @@ import { create } from 'zustand'
 import type { MotionType } from '@/components/WsContext/WsContextProvider'
 import { applySegment, PAD_WAVEFORM_BINS } from '@/audio/padWaveform'
 import type { UserPadState } from '@/components/ChaosPad/padEvents.types'
-import type { WireMessage } from '@/type'
+import { gestureSpeed01FromSegment } from '@/pad/padMotionMetrics'
+import type { PadMotionEnrichment, WireMessage } from '@/type'
 
 export type SelfUser = { userId: string; color: string }
 
-export type GestureInput = { type: MotionType; nx: number; ny: number }
+export type GestureInput = { type: MotionType; nx: number; ny: number } & PadMotionEnrichment
 
 export type RemoteListener = (msg: WireMessage) => void
 
@@ -33,6 +34,7 @@ export type PadEventStoreState = PadState & PadActions
 const lastHover: { current: { nx: number; ny: number } | null } = { current: null }
 const lastLocal: { current: { nx: number; ny: number } | null } = { current: null }
 const lastByUser: Record<string, { nx: number; ny: number } | null> = {}
+const lastRemoteSampleAt: Record<string, number> = {}
 const remoteListeners = new Set<RemoteListener>()
 
 export const padEventStore = create<PadEventStoreState>((set, get) => ({
@@ -54,6 +56,8 @@ export const padEventStore = create<PadEventStoreState>((set, get) => ({
 				ny: 0.5,
 				updatedAt: 0,
 				xyArray: new Float32Array(PAD_WAVEFORM_BINS),
+				gestureSpeed01: 0,
+				dtMs: 0,
 			},
 		}),
 
@@ -70,7 +74,8 @@ export const padEventStore = create<PadEventStoreState>((set, get) => ({
 		set({ xyVersion: get().xyVersion + 1 })
 	},
 
-	publishGesture: ({ type, nx, ny }) => {
+	publishGesture: (g) => {
+		const { type, nx, ny, gestureSpeed01, dtMs } = g
 		const state = get()
 		const self = state.selfUser
 		if (!self) return
@@ -99,10 +104,20 @@ export const padEventStore = create<PadEventStoreState>((set, get) => ({
 			ny,
 			updatedAt: performance.now(),
 			xyArray,
+			gestureSpeed01,
+			dtMs,
 		}
 
 		set({ local: next, xyVersion: state.xyVersion + 1 })
-		state.wsSend?.({ userId: self.userId, color: self.color, type, nx, ny })
+		state.wsSend?.({
+			userId: self.userId,
+			color: self.color,
+			type,
+			nx,
+			ny,
+			gestureSpeed01,
+			dtMs,
+		})
 	},
 
 	applyRemoteEvent: (msg) => {
@@ -111,6 +126,7 @@ export const padEventStore = create<PadEventStoreState>((set, get) => ({
 
 		if (msg.type === 'stop') {
 			delete lastByUser[uid]
+			delete lastRemoteSampleAt[uid]
 			const remotes = { ...state.remotes }
 			delete remotes[uid]
 			set({ remotes, xyVersion: state.xyVersion + 1 })
@@ -118,14 +134,32 @@ export const padEventStore = create<PadEventStoreState>((set, get) => ({
 			return
 		}
 
-		if (msg.type === 'start') lastByUser[uid] = null
+		if (msg.type === 'start') {
+			lastByUser[uid] = null
+			lastRemoteSampleAt[uid] = performance.now()
+		}
 
 		let buf = state.remotes[uid]?.xyArray
 		if (!buf) buf = new Float32Array(PAD_WAVEFORM_BINS)
 
 		const prev = lastByUser[uid] ?? null
+		let inSpeed = 0
+		let inDt = 0
+		if (typeof msg.gestureSpeed01 === 'number') {
+			inSpeed = msg.gestureSpeed01
+			inDt = typeof msg.dtMs === 'number' ? msg.dtMs : 0
+		} else if (msg.type === 'move' && prev) {
+			const now = performance.now()
+			const t0 = lastRemoteSampleAt[uid] ?? now
+			const dtMs = now - t0
+			inSpeed = gestureSpeed01FromSegment(prev, { nx: msg.nx, ny: msg.ny }, dtMs)
+			inDt = dtMs
+		}
 		applySegment(buf, prev?.nx ?? msg.nx, prev?.ny ?? msg.ny, msg.nx, msg.ny)
 		lastByUser[uid] = { nx: msg.nx, ny: msg.ny }
+		if (msg.type === 'start' || msg.type === 'move') {
+			lastRemoteSampleAt[uid] = performance.now()
+		}
 
 		const next: UserPadState = {
 			userId: uid,
@@ -135,6 +169,8 @@ export const padEventStore = create<PadEventStoreState>((set, get) => ({
 			ny: msg.ny,
 			updatedAt: performance.now(),
 			xyArray: buf,
+			gestureSpeed01: inSpeed,
+			dtMs: inDt,
 		}
 
 		const remotes = { ...state.remotes, [uid]: next }

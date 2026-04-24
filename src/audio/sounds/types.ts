@@ -1,7 +1,12 @@
 import type { AudioEngine } from '@/audio/engine/AudioEngine'
 import type { Voice } from '@/audio/engine/Voice'
 
-export type SoundModeId = 'sine' | 'padWaveform' | 'volumeLfoBuffer' | 'pitchLfoBuffer'
+export type SoundModeId =
+	| 'sine'
+	| 'padWaveform'
+	| 'volumeLfoBuffer'
+	| 'pitchLfoBuffer'
+	| 'speedPitch'
 
 export type SoundContext = {
 	engine: AudioEngine

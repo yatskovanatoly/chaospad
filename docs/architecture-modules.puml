@@ -16,8 +16,15 @@ package "src/state" {
     + applyRemoteEvent()
     + onRemote(cb)
   }
+  note right of padEventStore
+    **UserPadState** + **PadMotionEnrichment**
+    (gestureSpeed01, dtMs / segment)
+    local: taken from **GestureInput** as-is
+    remotes: **WireMessage** or fallback
+    (see **padMotionMetrics**)
+  end note
   class settingsStore <<store>> {
-    + soundModeId, volume, reverbLevel, quantize, release, vizId, ...
+    + soundModeId, spectralDebugOpen, volume, reverbLevel, quantize, release, ...
   }
   class usePadEvents <<hook>> {
     + subscribes padEventStore for viz
@@ -78,6 +85,7 @@ package "src/audio/sounds" {
     class padWaveformMode
     class volumeLfoBufferMode
     class pitchLfoBufferMode
+    class speedPitchMode
   }
 }
 
@@ -88,6 +96,29 @@ sineMode ..|> SoundMode
 padWaveformMode ..|> SoundMode
 volumeLfoBufferMode ..|> SoundMode
 pitchLfoBufferMode ..|> SoundMode
+speedPitchMode ..|> SoundMode
+speedPitchMode ..> padEventStore : local.gestureSpeed01
+
+' === Pad input + motion (shared metrics) ===
+package "src/pad" {
+  class padMotionMetrics <<module>> {
+    + GESTURE_SPEED_REF
+    + gestureSpeed01FromSegment()
+  }
+}
+
+' === App types (wire + enrichment) ===
+package "src" as src_root {
+  class type_ts <<file>> {
+    + PadMotionEnrichment
+    + WireMessage
+  }
+  note right of type_ts
+    **WireMessage** = { userId, color, type, nx, ny }
+    + optional gestureSpeed01, dtMs
+    (legacy clients may omit)
+  end note
+}
 
 ' === Controllers ===
 package "src/audio/controllers" {
@@ -133,10 +164,31 @@ package "src/components/ChaosPad" {
   class ChaosBootstrap <<component>> {
     + wsBind, attachAudioControllers, WS subscribe
   }
+  package "Pad" {
+    class ActiveViz <<component>> {
+      + soundModeId → screen component
+    }
+    class vizBySoundMode <<module>> {
+      + map SoundModeId to viz component
+    }
+    class PadInputContext <<component>> {
+      + pointer → norm coords
+      + enriches **GestureInput**
+      (gestureSpeed01, dtMs)
+    }
+  }
 }
 
 ChaosBootstrap ..> padEventStore
 ChaosBootstrap ..> attachAudioControllers
+
+ActiveViz ..> settingsStore
+ActiveViz ..> vizBySoundMode
+
+PadInputContext ..> padEventStore : publishGesture / Hover
+PadInputContext ..> padMotionMetrics
+padEventStore ..> padMotionMetrics : applyRemoteEvent fallback
+padEventStore ..> type_ts : WireMessage shape
 
 ' === Public audio facade ===
 note right of registry
