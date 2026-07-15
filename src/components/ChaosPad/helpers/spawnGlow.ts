@@ -1,31 +1,21 @@
-import type { MotionType } from '@/components/WsContext/WsContextProvider'
-
 const spawnGlow = (
+	container: HTMLElement,
 	x: number,
 	y: number,
 	color: string,
-	_type: MotionType,
+	size: number,
 ) => {
+	const half = size / 2
 	const glow = document.createElement('div')
-	glow.classList.add(
-		'glow',
-		'absolute',
-		'rounded-full',
-		'border-4',
-		'opacity-60',
-		'transition-all',
-		'pointer-events-none',
-		'ease-in-out',
-		'blur-xs',
-		color
-	)
-	glow.style.left = `${x - 25}px`
-	glow.style.top = `${y - 25}px`
-	glow.style.width = '50px'
-	glow.style.height = '50px'
-	glow.style.animation = 'glow-effect .5s ease-in-out'
+	glow.className = 'chaospad-glow'
+	glow.style.left = `${x - half}px`
+	glow.style.top = `${y - half}px`
+	glow.style.width = `${size}px`
+	glow.style.height = `${size}px`
+	glow.style.borderColor = color
+	glow.style.animation = 'glow-effect 0.5s ease-in-out'
 
-	document.body.appendChild(glow)
+	container.appendChild(glow)
 	setTimeout(() => glow.remove(), 500)
 }
 

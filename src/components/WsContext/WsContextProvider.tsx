@@ -1,22 +1,24 @@
 'use client'
 
-import { getPublicWebSocketUrl } from '@/config'
+import { useChaospadConfig } from '@/context/ChaospadConfigContext'
 import { colors, getColorForUser, getUserId } from '@/components/WsContext/helpers/getUserParams'
+import { resolveWebSocketUrl } from '@/types/config'
 import type { Position, WSContextType } from '@/type'
 import { useEffect, useRef, useState } from 'react'
 import { WebSocketContext } from './WsContext'
 
 const WebSocketProvider = ({ children }: { children: React.ReactNode }) => {
+	const { wsUrl, userId: configUserId } = useChaospadConfig()
 	const [pos, setPos] = useState<Position | undefined>(undefined)
 	const [type, setType] = useState<'start' | 'move' | 'stop'>('stop')
 	const wsRef = useRef<WebSocket | null>(null)
-	const userIdRef = useRef(getUserId())
+	const userIdRef = useRef(configUserId ?? getUserId())
 	const userId = userIdRef.current
 	const color = getColorForUser(userId) || colors[0]
 	const [message, setMessage] = useState<WSContextType['message']>(undefined)
 
 	useEffect(() => {
-		const ws = new WebSocket(getPublicWebSocketUrl())
+		const ws = new WebSocket(resolveWebSocketUrl(wsUrl))
 		wsRef.current = ws
 
 		ws.onmessage = (event) => {
@@ -35,12 +37,12 @@ const WebSocketProvider = ({ children }: { children: React.ReactNode }) => {
 		}
 
 		return () => ws.close()
-	}, [])
+	}, [wsUrl])
 
 	useEffect(() => {
 		if (wsRef.current?.readyState === WebSocket.OPEN) {
 			wsRef.current?.send(
-				JSON.stringify({ userId, type, x: pos?.x, y: pos?.y, color })
+				JSON.stringify({ userId, type, nx: pos?.nx, ny: pos?.ny, color })
 			)
 		}
 	}, [pos, type, userId, color])

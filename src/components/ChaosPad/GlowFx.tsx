@@ -1,11 +1,26 @@
 'use client'
 
-import throttledSpawn from '@/components/ChaosPad/helpers/throttledSpawn'
-import React, { PropsWithChildren, useEffect, useRef } from 'react'
+import { useChaospadConfig } from '@/context/ChaospadConfigContext'
+import createThrottledSpawn from '@/components/ChaosPad/helpers/throttledSpawn'
+import type { Position } from '@/type'
+import React, { useEffect, useMemo, useRef } from 'react'
 import useWebSocket from '../WsContext/useWebSocket'
 
-const GlowEffect: React.FC<PropsWithChildren> = ({ children }) => {
+type GlowEffectProps = {
+	containerRef: React.RefObject<HTMLDivElement | null>
+}
+
+const toPixel = (container: HTMLElement, pos: Position) => {
+	const { width, height } = container.getBoundingClientRect()
+	return {
+		x: pos.nx * width,
+		y: pos.ny * height,
+	}
+}
+
+const GlowEffect: React.FC<GlowEffectProps> = ({ containerRef }) => {
 	const { color, pos, type, message } = useWebSocket()
+	const { glowIntervalMs, glowSize } = useChaospadConfig()
 	const posRef = useRef(pos)
 	const typeRef = useRef(type)
 	const colorRef = useRef(color)
@@ -13,26 +28,37 @@ const GlowEffect: React.FC<PropsWithChildren> = ({ children }) => {
 	typeRef.current = type
 	colorRef.current = color
 
+	const throttledSpawn = useMemo(
+		() => createThrottledSpawn(glowIntervalMs, glowSize),
+		[glowIntervalMs, glowSize],
+	)
+
 	useEffect(() => {
-		if (!pos || type === 'stop') return
-		throttledSpawn(pos.x, pos.y, color, type)
+		const container = containerRef.current
+		if (!container || !pos || type === 'stop') return
+
+		const { x, y } = toPixel(container, pos)
+		throttledSpawn(container, x, y, color, type)
 		const id = window.setInterval(() => {
 			const p = posRef.current
 			const t = typeRef.current
 			const c = colorRef.current
-			if (!p || t === 'stop') return
-			throttledSpawn(p.x, p.y, c, t)
-		}, 50)
+			if (!p || t === 'stop' || !containerRef.current) return
+			const pixel = toPixel(containerRef.current, p)
+			throttledSpawn(containerRef.current, pixel.x, pixel.y, c, t)
+		}, glowIntervalMs)
 		return () => window.clearInterval(id)
-	}, [pos, type, color])
+	}, [pos, type, color, containerRef, throttledSpawn, glowIntervalMs])
 
 	useEffect(() => {
-		if (!message) return
-		const { x, y, color, type } = message
-		throttledSpawn(x, y, color, type)
-	}, [message])
+		const container = containerRef.current
+		if (!container || !message) return
+		const { nx, ny, color, type } = message
+		const { width, height } = container.getBoundingClientRect()
+		throttledSpawn(container, nx * width, ny * height, color, type)
+	}, [message, containerRef, throttledSpawn])
 
-	return <div>{children}</div>
+	return null
 }
 
 export default GlowEffect

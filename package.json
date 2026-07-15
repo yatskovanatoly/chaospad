@@ -1,30 +1,58 @@
 {
 	"name": "chaospad",
-	"version": "0.1.0",
-	"private": true,
+	"version": "0.2.0",
+	"description": "WebSocket-powered touch pad with generative audio and cursor glow",
+	"type": "module",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": {
+				"types": "./dist/index.d.ts",
+				"default": "./dist/index.js"
+			},
+			"require": {
+				"types": "./dist/index.d.ts",
+				"default": "./dist/index.cjs"
+			}
+		},
+		"./styles.css": "./dist/styles.css"
+	},
+	"files": [
+		"dist"
+	],
+	"sideEffects": [
+		"*.css"
+	],
 	"scripts": {
 		"dev": "next dev --turbopack",
 		"dev:ws": "next dev --turbopack & bun ./src/ws-server.mjs",
-		"build": "next build",
+		"build": "tsup",
+		"build:demo": "next build",
 		"start": "next start",
-		"lint": "next lint"
+		"lint": "next lint",
+		"prepublishOnly": "npm run build"
 	},
-	"dependencies": {
-		"dotenv": "^16.6.1",
-		"next": "^16.2.3",
-		"react": "^19.2.5",
-		"react-dom": "^19.2.5",
-		"ws": "^8.20.0"
+	"peerDependencies": {
+		"react": ">=18",
+		"react-dom": ">=18"
 	},
 	"devDependencies": {
-		"typescript": "^5.9.3",
+		"@eslint/eslintrc": "^3.3.5",
+		"@tailwindcss/postcss": "^4.2.2",
 		"@types/node": "^20.19.39",
 		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",
-		"@tailwindcss/postcss": "^4.2.2",
-		"tailwindcss": "^4.2.2",
+		"dotenv": "^16.6.1",
 		"eslint": "^9.39.4",
 		"eslint-config-next": "15.2.1",
-		"@eslint/eslintrc": "^3.3.5"
+		"next": "^16.2.3",
+		"react": "^19.2.5",
+		"react-dom": "^19.2.5",
+		"tailwindcss": "^4.2.2",
+		"tsup": "^8.5.1",
+		"typescript": "^5.9.3",
+		"ws": "^8.20.0"
 	}
 }

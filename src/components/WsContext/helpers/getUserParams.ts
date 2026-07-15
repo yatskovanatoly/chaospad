@@ -1,9 +1,9 @@
 export const colors = [
-	'border-blue-500',
-	'border-red-500',
-	'border-green-500',
-	'border-yellow-500',
-	'border-purple-500',
+	'#3b82f6',
+	'#ef4444',
+	'#22c55e',
+	'#eab308',
+	'#a855f7',
 ]
 
 export const getColorForUser = (id: string | undefined) => {

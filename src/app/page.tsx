@@ -1,15 +1,18 @@
 'use client'
 
-import { AudioEngineProvider } from '@/components/AudioEngineContext'
-import ChaosPad from '@/components/ChaosPad/ChaosPad'
-import WebSocketProvider from '@/components/WsContext/WsContextProvider'
+import { Chaospad } from '@/Chaospad'
 
 const Page = () => (
-	<WebSocketProvider>
-		<AudioEngineProvider>
-			<ChaosPad />
-		</AudioEngineProvider>
-	</WebSocketProvider>
+	<div style={{ width: '100%', height: '100dvh', background: 'linear-gradient(to top, #1f2937, #000)' }}>
+		<Chaospad
+			config={{
+				volume: 1,
+				reverbLevel: 0.5,
+				release: 0.5,
+				quantize: 'chromatic',
+			}}
+		/>
+	</div>
 )
 
 export default Page

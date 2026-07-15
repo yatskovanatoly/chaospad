@@ -31,7 +31,7 @@ export class AudioEngine {
 		this.convolverGain.gain.value = v
 	}
 
-	createVoice(position: { x: number; y: number }, quantize: QuantizeMode = 'none') {
+	createVoice(position: { nx: number; ny: number }, quantize: QuantizeMode = 'none') {
 		return new Voice(this, position, quantize)
 	}
 }
@@ -43,7 +43,7 @@ export class Voice {
 	private releaseTimer?: ReturnType<typeof setTimeout>
 	quantize: QuantizeMode
 
-	constructor(engine: AudioEngine, position: { x: number; y: number }, quantize: QuantizeMode = 'none') {
+	constructor(engine: AudioEngine, position: { nx: number; ny: number }, quantize: QuantizeMode = 'none') {
 		this.engine = engine
 		this.quantize = quantize
 		const ctx = engine.ctx
@@ -51,7 +51,7 @@ export class Voice {
 		this.oscillator = ctx.createOscillator()
 		this.gain = ctx.createGain()
 		this.oscillator.type = 'sine'
-		const { freq: rawFreq, amp } = getSoundParamsFromXY(position.x, position.y)
+		const { freq: rawFreq, amp } = getSoundParamsFromXY(position.nx, position.ny)
 		this.oscillator.frequency.value = quantizeFreq(rawFreq, quantize)
 		const target = amp * 0.5
 		const now = ctx.currentTime
@@ -64,10 +64,10 @@ export class Voice {
 		this.oscillator.start(now)
 	}
 
-	updatePosition(x: number, y: number) {
+	updatePosition(nx: number, ny: number) {
 		updateSoundFromPosition(
-			x,
-			y,
+			nx,
+			ny,
 			this.engine.ctx,
 			this.oscillator,
 			this.gain,

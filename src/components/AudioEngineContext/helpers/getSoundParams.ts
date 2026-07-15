@@ -1,14 +1,11 @@
-export const getSoundParamsFromXY = (clientX: number, clientY: number) => {
+export const getSoundParamsFromXY = (nx: number, ny: number) => {
 	const minFreq = 256
 	const maxFreq = 512
 
-	const x = clientX / window.innerWidth // Normalize x relative to the element's width
-	const y = clientY / window.innerHeight // Normalize y relative to the element's height
+	const x = Math.min(1, Math.max(0, nx))
+	const y = Math.min(1, Math.max(0, ny))
 
-	// Apply logarithmic scaling for frequency based on normalized x value
 	const freq = minFreq * Math.pow(maxFreq / minFreq, x)
-
-	// Amplitude decreases as y increases, within the range [0, 1]
 	const amp = 1 - y
 
 	return { freq, amp, x, y }

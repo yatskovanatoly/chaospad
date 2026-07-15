@@ -1,0 +1,63 @@
+const STYLE_ID = 'chaospad-styles'
+
+const CHAOSPAD_CSS = `
+@keyframes glow-effect {
+	0% {
+		transform: scale(0);
+		opacity: 1;
+	}
+	50% {
+		transform: scale(1.5);
+		opacity: 0.6;
+	}
+	100% {
+		transform: scale(3);
+		opacity: 0;
+	}
+}
+
+.chaospad-glow {
+	position: absolute;
+	border-radius: 50%;
+	border-width: 4px;
+	border-style: solid;
+	opacity: 0.6;
+	pointer-events: none;
+	transform-origin: center;
+	animation: glow-effect 0.5s ease-in-out;
+	filter: blur(2px);
+}
+
+.chaospad-root {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	touch-action: none;
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+.chaospad-surface {
+	position: absolute;
+	inset: 0;
+	touch-action: none;
+}
+
+.chaospad-glow-layer {
+	position: absolute;
+	inset: 0;
+	overflow: visible;
+	pointer-events: none;
+}
+`
+
+export function injectChaospadStyles() {
+	if (typeof document === 'undefined') return
+	if (document.getElementById(STYLE_ID)) return
+
+	const style = document.createElement('style')
+	style.id = STYLE_ID
+	style.textContent = CHAOSPAD_CSS
+	document.head.appendChild(style)
+}

@@ -1,18 +1,21 @@
-import { MotionType } from '@/components/WsContext/WsContextProvider'
+import type { MotionType } from '@/components/WsContext/WsContextProvider'
 import spawnGlow from './spawnGlow'
 
-let lastGlowTime = 0
+const createThrottledSpawn = (intervalMs: number, glowSize: number) => {
+	let lastGlowTime = 0
 
-const throttledSpawn = (
-	x: number,
-	y: number,
-	color: string,
-	type: MotionType,
-) => {
-	const now = Date.now()
-	if (now - lastGlowTime < 50) return
-	lastGlowTime = now
-	spawnGlow(x, y, color, type)
+	return (
+		container: HTMLElement,
+		x: number,
+		y: number,
+		color: string,
+		_type: MotionType,
+	) => {
+		const now = Date.now()
+		if (now - lastGlowTime < intervalMs) return
+		lastGlowTime = now
+		spawnGlow(container, x, y, color, glowSize)
+	}
 }
 
-export default throttledSpawn
+export default createThrottledSpawn

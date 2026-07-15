@@ -5,27 +5,29 @@ import { useChaosWebSocket } from './hooks/useChaosWs'
 import useWebSocket from '../WsContext/useWebSocket'
 import { MotionType } from '../WsContext/WsContextProvider'
 import GlowEffect from './GlowFx'
+import { useRef, type CSSProperties } from 'react'
 
-export default function ChaosPad() {
+type ChaosPadProps = {
+	className?: string
+	style?: CSSProperties
+}
 
-	const {
-		setRelease,
-		setReverbLevel,
-		release,
-		reverbLevel,
-		volume,
-		setVolume,
-		isActive,
-		oscillatorRef,
-		quantize,
-	} = useChaosAudio()
+export default function ChaosPad({ className, style }: ChaosPadProps) {
+	const rootRef = useRef<HTMLDivElement>(null)
+	const glowContainerRef = useRef<HTMLDivElement>(null)
 
-	useChaosWebSocket(quantize)
+	const { isActive, oscillatorRef } = useChaosAudio()
+	useChaosWebSocket()
 
 	const { setType, setPos } = useWebSocket()
 
 	const emitPointer = (e: React.PointerEvent, type: MotionType) => {
-		setPos({ x: e.clientX, y: e.clientY })
+		const rect = rootRef.current?.getBoundingClientRect()
+		if (!rect || rect.width === 0 || rect.height === 0) return
+		setPos({
+			nx: (e.clientX - rect.left) / rect.width,
+			ny: (e.clientY - rect.top) / rect.height,
+		})
 		setType(type)
 	}
 
@@ -58,57 +60,20 @@ export default function ChaosPad() {
 	}
 
 	return (
-		<>
-			<div className='w-full h-dvh bg-gradient-to-t from-gray-800 to-black flex flex-col items-center justify-center select-none'>
-				<div className='w-full h-full flex-1 relative overflow-hidden'>
-					<div
-						className='absolute inset-0 touch-none'
-						onPointerDown={handlePointerDown}
-						onPointerMove={handlePointerMove}
-						onPointerUp={handlePointerUp}
-						onPointerCancel={handlePointerCancel}
-					/>
-				</div>
-				<div className='w-full max-w-xl px-6 py-4 space-y-3 z-10 text-sm text-white'>
-					<label className='block'>
-						Release: {release.toFixed(2)}s
-						<input
-							type='range'
-							min={0}
-							max={3}
-							step={0.01}
-							value={release}
-							onChange={(e) => setRelease(parseFloat(e.target.value))}
-							className='w-full accent-gray-500'
-						/>
-					</label>
-					<label className='block'>
-						Reverb: {Math.ceil(reverbLevel * 100)}%
-						<input
-							type='range'
-							min={0}
-							max={1}
-							step={0.01}
-							value={reverbLevel}
-							onChange={(e) => setReverbLevel(parseFloat(e.target.value))}
-							className='w-full accent-gray-500'
-						/>
-					</label>
-					<label className='block'>
-						Volume: {Math.ceil(volume * 100)}%
-						<input
-							type='range'
-							min={0}
-							max={1}
-							step={0.01}
-							value={volume}
-							onChange={(e) => setVolume(parseFloat(e.target.value))}
-							className='w-full accent-gray-500'
-						/>
-					</label>
-				</div>
-			</div>
-			<GlowEffect />
-		</>
+		<div
+			ref={rootRef}
+			className={['chaospad-root', className].filter(Boolean).join(' ')}
+			style={style}
+		>
+			<div
+				className='chaospad-surface'
+				onPointerDown={handlePointerDown}
+				onPointerMove={handlePointerMove}
+				onPointerUp={handlePointerUp}
+				onPointerCancel={handlePointerCancel}
+			/>
+			<div ref={glowContainerRef} className='chaospad-glow-layer' />
+			<GlowEffect containerRef={glowContainerRef} />
+		</div>
 	)
 }

@@ -1,12 +1,13 @@
 import handleRemoteEvent from '@/components/ChaosPad/helpers/handleRemoteAudio'
+import { useChaospadConfig } from '@/context/ChaospadConfigContext'
 import type { Voice } from '@/components/AudioEngineContext/AudioEngine'
-import type { QuantizeMode } from '@/components/AudioEngineContext/helpers/quantizeFreq'
 import { useAudioEngine } from '@/components/AudioEngineContext/useAudioEngine'
 import { useEffect, useRef } from 'react'
 import useWebSocket from '../../WsContext/useWebSocket'
 
-export function useChaosWebSocket(quantize: QuantizeMode) {
+export function useChaosWebSocket() {
 	const engine = useAudioEngine()
+	const { quantize, remoteRelease } = useChaospadConfig()
 	const { message } = useWebSocket()
 	const remoteUsersRef = useRef<RemoteUserType>({})
 
@@ -18,17 +19,18 @@ export function useChaosWebSocket(quantize: QuantizeMode) {
 
 	useEffect(() => {
 		if (!message) return
-		const { userId, type, x, y } = message
+		const { userId, type, nx, ny } = message
 		handleRemoteEvent({
 			userId: userId!,
 			type,
-			x,
-			y,
+			nx,
+			ny,
 			engine,
 			remoteUsersRef: remoteUsersRef.current,
 			quantize,
+			remoteRelease,
 		})
-	}, [engine, message, quantize])
+	}, [engine, message, quantize, remoteRelease])
 }
 
 export type RemoteUserType = Record<string, Voice>

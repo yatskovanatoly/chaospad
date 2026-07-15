@@ -1,18 +1,15 @@
+import { useChaospadConfig } from '@/context/ChaospadConfigContext'
 import type { Voice } from '@/components/AudioEngineContext/AudioEngine'
-import type { QuantizeMode } from '@/components/AudioEngineContext/helpers/quantizeFreq'
 import { useAudioEngine } from '@/components/AudioEngineContext'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import useWebSocket from '../../WsContext/useWebSocket'
 
 export function useChaosAudio() {
 	const engine = useAudioEngine()
+	const { volume, reverbLevel, release, quantize } = useChaospadConfig()
 	const voiceRef = useRef<Voice | null>(null)
 	const oscillatorRef = useRef<OscillatorNode | null>(null)
-	const [isActive, setIsActive] = useState(false)
-	const [release, setRelease] = useState(0.5)
-	const [reverbLevel, setReverbLevel] = useState(0.5)
-	const [volume, setVolume] = useState(1)
-	const [quantize, setQuantize] = useState<QuantizeMode>('chromatic')
+	const isActiveRef = useRef(false)
 	const { pos, type: motionType } = useWebSocket()
 
 	useEffect(() => {
@@ -28,10 +25,10 @@ export function useChaosAudio() {
 		engine.setVolume(volume)
 		engine.setReverbLevel(reverbLevel)
 		const run = () => {
-			const voice = engine.createVoice(pos ?? { x: 0, y: 0 }, quantize)
+			const voice = engine.createVoice(pos ?? { nx: 0, ny: 0 }, quantize)
 			voiceRef.current = voice
 			oscillatorRef.current = voice.oscillator
-			setIsActive(true)
+			isActiveRef.current = true
 		}
 		if (engine.ctx.state === 'suspended') {
 			void engine.ctx.resume().then(run)
@@ -46,31 +43,21 @@ export function useChaosAudio() {
 			voiceRef.current = null
 			oscillatorRef.current = null
 		}
-		setIsActive(false)
+		isActiveRef.current = false
 	}, [release])
 
 	useEffect(() => {
-		if (motionType === 'start' && !isActive) {
+		if (motionType === 'start' && !isActiveRef.current) {
 			startAudio()
-		} else if (motionType === 'move' && isActive && pos) {
-			voiceRef.current?.updatePosition(pos.x, pos.y)
-		} else if (motionType === 'stop' && isActive) {
+		} else if (motionType === 'move' && isActiveRef.current && pos) {
+			voiceRef.current?.updatePosition(pos.nx, pos.ny)
+		} else if (motionType === 'stop' && isActiveRef.current) {
 			stopAudio()
 		}
-	}, [isActive, motionType, pos, startAudio, stopAudio])
+	}, [motionType, pos, startAudio, stopAudio])
 
 	return {
-		startAudio,
-		stopAudio,
-		isActive,
-		setRelease,
-		setReverbLevel,
-		release,
-		reverbLevel,
-		volume,
-		setVolume,
-		quantize,
-		setQuantize,
+		isActive: isActiveRef.current,
 		oscillatorRef,
 	}
 }

@@ -1,34 +1,109 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# chaospad
 
-## Getting Started
+A self-contained React touch pad with generative audio and cursor glow animation. Pointer events are synced over WebSocket.
 
-First, run the development server:
+## Installation
+
+### From npm
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install chaospad
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Peer dependencies (install if not already present):
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install react react-dom
+```
 
-## Learn More
+Works with React 18+.
 
-To learn more about Next.js, take a look at the following resources:
+### From GitHub
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm install github:yatskovanatoly/chaospad
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Local development (link from this repo)
 
-## Deploy on Vercel
+```bash
+# in chaospad repo
+npm run build
+npm link
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+# in your app
+npm link chaospad
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Or install directly from a local path:
+
+```bash
+npm install /path/to/chaospad
+```
+
+## Usage
+
+```tsx
+import { Chaospad } from 'chaospad'
+
+export function App() {
+  return (
+    <div style={{ width: '100%', height: '400px' }}>
+      <Chaospad
+        config={{
+          volume: 1,
+          reverbLevel: 0.5,
+          release: 0.5,
+          remoteRelease: 0.5,
+          quantize: 'chromatic',
+        }}
+      />
+    </div>
+  )
+}
+```
+
+For a remote WebSocket relay, pass `wsUrl` explicitly:
+
+```tsx
+<Chaospad config={{ wsUrl: 'wss://ws.example.com' }} />
+```
+
+By default the client connects to `ws://localhost:3003`. Start the local relay with:
+
+```bash
+npm run dev:ws
+# or
+bun ./src/ws-server.mjs
+```
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `wsUrl` | `string` | `ws://localhost:3003` | WebSocket relay URL |
+| `volume` | `number` | `1` | Master volume, 0–1 |
+| `reverbLevel` | `number` | `0.5` | Reverb wet level, 0–1 |
+| `release` | `number` | `0.5` | Local voice release time (seconds) |
+| `remoteRelease` | `number` | `0.5` | Remote voices release time (seconds) |
+| `quantize` | `'none' \| 'chromatic'` | `'chromatic'` | Frequency quantization |
+| `userId` | `string` | auto | Session user id |
+| `glowIntervalMs` | `number` | `50` | Glow spawn interval while held (ms) |
+| `glowSize` | `number` | `50` | Glow circle diameter (px) |
+
+`<Chaospad />` is fully self-contained: it mounts WebSocket, audio engine, glow animation (`glow-effect`), and injects its own styles. No external providers required.
+
+Optional: `import 'chaospad/styles.css'` for SSR setups.
+
+## Development (this repo)
+
+```bash
+npm run dev          # Next.js demo app
+npm run dev:ws       # demo + local ws-server on :3003
+npm run build        # build npm package → dist/
+npm run build:demo   # build demo app
+```
+
+## WebSocket server
+
+The relay server (`src/ws-server.mjs`) is not bundled into the npm package. Deploy it separately or run locally on port 3003.
