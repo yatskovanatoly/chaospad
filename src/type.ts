@@ -1,6 +1,13 @@
 import { Dispatch, RefObject, SetStateAction } from 'react'
 import { MotionType } from './components/WsContext/WsContextProvider'
 
+export type PadMotion = {
+	pos: Position | undefined
+	type: MotionType
+}
+
+export type PadMotionListener = (motion: PadMotion) => void
+
 export type WSContextType = {
 	wsRef: RefObject<WebSocket | null>
 	type: MotionType
@@ -10,6 +17,8 @@ export type WSContextType = {
 	pos: Position | undefined
 	setPos: Dispatch<SetStateAction<Position | undefined>>
 	message: Message
+	emitMotion: (pos: Position | undefined, type: MotionType) => void
+	subscribeMotion: (listener: PadMotionListener) => () => void
 }
 
 type Message =

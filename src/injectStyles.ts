@@ -47,6 +47,10 @@ const CHAOSPAD_CSS = `
 	-webkit-user-select: auto;
 }
 
+.chaospad-pass-through .chaospad-surface {
+	pointer-events: none;
+}
+
 .chaospad-surface {
 	position: absolute;
 	inset: 0;

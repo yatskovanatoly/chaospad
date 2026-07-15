@@ -324,10 +324,10 @@ var useWebSocket_default = useWebSocket;
 function useChaosAudio() {
   const engine = useAudioEngine();
   const { volume, reverbLevel, release, quantize } = useChaospadConfig();
+  const { subscribeMotion } = useWebSocket_default();
   const voiceRef = (0, import_react7.useRef)(null);
-  const oscillatorRef = (0, import_react7.useRef)(null);
-  const [isActive, setIsActive] = (0, import_react7.useState)(false);
-  const { pos, type: motionType } = useWebSocket_default();
+  const isActiveRef = (0, import_react7.useRef)(false);
+  const pendingStartRef = (0, import_react7.useRef)(false);
   (0, import_react7.useEffect)(() => {
     engine.setVolume(volume);
     engine.setReverbLevel(reverbLevel);
@@ -335,42 +335,51 @@ function useChaosAudio() {
   (0, import_react7.useEffect)(() => {
     if (voiceRef.current) voiceRef.current.quantize = quantize;
   }, [quantize]);
-  const startAudio = (0, import_react7.useCallback)(() => {
-    engine.setVolume(volume);
-    engine.setReverbLevel(reverbLevel);
-    const run = () => {
-      const voice = engine.createVoice(pos != null ? pos : { nx: 0, ny: 0 }, quantize);
-      voiceRef.current = voice;
-      oscillatorRef.current = voice.oscillator;
-      setIsActive(true);
-    };
-    if (engine.ctx.state === "suspended") {
-      void engine.ctx.resume().then(run);
-    } else {
-      run();
-    }
-  }, [engine, pos, quantize, reverbLevel, volume]);
+  const startAudio = (0, import_react7.useCallback)(
+    (position) => {
+      pendingStartRef.current = true;
+      engine.setVolume(volume);
+      engine.setReverbLevel(reverbLevel);
+      const run = () => {
+        if (!pendingStartRef.current) return;
+        const voice = engine.createVoice(position, quantize);
+        voiceRef.current = voice;
+        isActiveRef.current = true;
+      };
+      if (engine.ctx.state === "suspended") {
+        void engine.ctx.resume().then(run);
+      } else {
+        run();
+      }
+    },
+    [engine, quantize, reverbLevel, volume]
+  );
   const stopAudio = (0, import_react7.useCallback)(() => {
+    pendingStartRef.current = false;
     if (voiceRef.current) {
       voiceRef.current.stop(release);
       voiceRef.current = null;
-      oscillatorRef.current = null;
     }
-    setIsActive(false);
+    isActiveRef.current = false;
   }, [release]);
   (0, import_react7.useEffect)(() => {
-    var _a;
-    if (motionType === "start" && !isActive) {
-      startAudio();
-    } else if (motionType === "move" && isActive && pos) {
-      (_a = voiceRef.current) == null ? void 0 : _a.updatePosition(pos.nx, pos.ny);
-    } else if (motionType === "stop" && isActive) {
-      stopAudio();
-    }
-  }, [isActive, motionType, pos, startAudio, stopAudio]);
+    return subscribeMotion(({ pos, type }) => {
+      var _a;
+      if (type === "start" && pos) {
+        if (!isActiveRef.current) startAudio(pos);
+        return;
+      }
+      if (type === "move" && isActiveRef.current && pos) {
+        (_a = voiceRef.current) == null ? void 0 : _a.updatePosition(pos.nx, pos.ny);
+        return;
+      }
+      if (type === "stop" && isActiveRef.current) {
+        stopAudio();
+      }
+    });
+  }, [startAudio, stopAudio, subscribeMotion]);
   return {
-    isActive,
-    oscillatorRef
+    isActive: isActiveRef.current
   };
 }
 
@@ -435,54 +444,178 @@ function useChaosWebSocket() {
   }, [engine, message, quantize, remoteRelease]);
 }
 
-// src/components/ChaosPad/hooks/useGlobalPointerPad.ts
+// src/components/ChaosPad/hooks/useAudioUnlock.ts
 var import_react9 = require("react");
-var CAPTURE = { capture: true, passive: true };
-function useGlobalPointerPad(rootRef, enabled) {
-  const { setType, setPos } = useWebSocket_default();
-  const setTypeRef = (0, import_react9.useRef)(setType);
-  const setPosRef = (0, import_react9.useRef)(setPos);
-  const activePointersRef = (0, import_react9.useRef)(/* @__PURE__ */ new Set());
-  setTypeRef.current = setType;
-  setPosRef.current = setPos;
+var UNLOCK_OPTS = { capture: true, passive: true };
+function useAudioUnlock() {
+  const engine = useAudioEngine();
   (0, import_react9.useEffect)(() => {
-    if (!enabled) return;
-    const emitPointer = (clientX, clientY, type) => {
-      var _a;
-      const rect = (_a = rootRef.current) == null ? void 0 : _a.getBoundingClientRect();
+    const unlock = () => {
+      if (engine.ctx.state === "suspended") {
+        void engine.ctx.resume();
+      }
+    };
+    document.addEventListener("touchstart", unlock, UNLOCK_OPTS);
+    document.addEventListener("pointerdown", unlock, UNLOCK_OPTS);
+    document.addEventListener("click", unlock, UNLOCK_OPTS);
+    return () => {
+      document.removeEventListener("touchstart", unlock, UNLOCK_OPTS);
+      document.removeEventListener("pointerdown", unlock, UNLOCK_OPTS);
+      document.removeEventListener("click", unlock, UNLOCK_OPTS);
+    };
+  }, [engine]);
+}
+
+// src/components/ChaosPad/hooks/useGlobalPointerPad.ts
+var import_react10 = require("react");
+var DRAG_THRESHOLD_PX = 10;
+var CLICK_SUPPRESS_MS = 400;
+var PASSIVE_CAPTURE = { capture: true, passive: true };
+var ACTIVE_CAPTURE = { capture: true, passive: false };
+function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
+  const { emitMotion } = useWebSocket_default();
+  const emitMotionRef = (0, import_react10.useRef)(emitMotion);
+  const sessionsRef = (0, import_react10.useRef)(/* @__PURE__ */ new Map());
+  const suppressClickUntilRef = (0, import_react10.useRef)(0);
+  emitMotionRef.current = emitMotion;
+  (0, import_react10.useEffect)(() => {
+    var _a;
+    const emit = (clientX, clientY, type) => {
+      var _a2;
+      const rect = (_a2 = rootRef.current) == null ? void 0 : _a2.getBoundingClientRect();
       if (!rect || rect.width === 0 || rect.height === 0) return;
-      setPosRef.current({
+      const pos = {
         nx: (clientX - rect.left) / rect.width,
         ny: (clientY - rect.top) / rect.height
-      });
-      setTypeRef.current(type);
+      };
+      emitMotionRef.current(pos, type);
+    };
+    const endSession = (pointerId, clientX, clientY, event) => {
+      const session = sessionsRef.current.get(pointerId);
+      if (!session) return;
+      sessionsRef.current.delete(pointerId);
+      emit(clientX, clientY, "stop");
+      if (passThrough && session.isDrag) {
+        suppressClickUntilRef.current = Date.now() + CLICK_SUPPRESS_MS;
+        event == null ? void 0 : event.preventDefault();
+        event == null ? void 0 : event.stopPropagation();
+      }
+    };
+    const endAllSessions = (event) => {
+      for (const [pointerId, session] of sessionsRef.current) {
+        emit(session.lastX, session.lastY, "stop");
+        if (passThrough && session.isDrag) {
+          suppressClickUntilRef.current = Date.now() + CLICK_SUPPRESS_MS;
+          event == null ? void 0 : event.preventDefault();
+        }
+      }
+      sessionsRef.current.clear();
     };
     const onPointerDown = (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
-      activePointersRef.current.add(e.pointerId);
-      emitPointer(e.clientX, e.clientY, "start");
+      sessionsRef.current.set(e.pointerId, {
+        startX: e.clientX,
+        startY: e.clientY,
+        lastX: e.clientX,
+        lastY: e.clientY,
+        isDrag: !passThrough
+      });
+      if (!passThrough) {
+        e.preventDefault();
+        const surface = surfaceRef.current;
+        if ((surface == null ? void 0 : surface.hasPointerCapture) && !surface.hasPointerCapture(e.pointerId)) {
+          surface.setPointerCapture(e.pointerId);
+        }
+      }
+      emit(e.clientX, e.clientY, "start");
     };
     const onPointerMove = (e) => {
-      if (!activePointersRef.current.has(e.pointerId)) return;
-      emitPointer(e.clientX, e.clientY, "move");
+      const session = sessionsRef.current.get(e.pointerId);
+      if (!session) return;
+      session.lastX = e.clientX;
+      session.lastY = e.clientY;
+      if (passThrough && !session.isDrag) {
+        const dx = e.clientX - session.startX;
+        const dy = e.clientY - session.startY;
+        if (Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX) {
+          session.isDrag = true;
+        }
+      }
+      if (!passThrough || session.isDrag) {
+        e.preventDefault();
+        emit(e.clientX, e.clientY, "move");
+      }
     };
-    const endPointer = (e) => {
-      if (!activePointersRef.current.has(e.pointerId)) return;
-      activePointersRef.current.delete(e.pointerId);
-      emitPointer(e.clientX, e.clientY, "stop");
+    const onPointerUp = (e) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      endSession(e.pointerId, e.clientX, e.clientY, e);
     };
-    document.addEventListener("pointerdown", onPointerDown, CAPTURE);
-    document.addEventListener("pointermove", onPointerMove, CAPTURE);
-    document.addEventListener("pointerup", endPointer, CAPTURE);
-    document.addEventListener("pointercancel", endPointer, CAPTURE);
+    const onPointerCancel = (e) => {
+      endSession(e.pointerId, e.clientX, e.clientY, e);
+    };
+    const onTouchMove = (e) => {
+      if (sessionsRef.current.size === 0) return;
+      const touch = e.touches[0];
+      if (!touch) return;
+      const firstEntry = sessionsRef.current.entries().next();
+      if (firstEntry.done) return;
+      const [, session] = firstEntry.value;
+      session.lastX = touch.clientX;
+      session.lastY = touch.clientY;
+      if (passThrough && !session.isDrag) {
+        const dx = touch.clientX - session.startX;
+        const dy = touch.clientY - session.startY;
+        if (Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX) {
+          session.isDrag = true;
+        }
+      }
+      if (!passThrough || session.isDrag) {
+        e.preventDefault();
+        emit(touch.clientX, touch.clientY, "move");
+      }
+    };
+    const onTouchEnd = (e) => {
+      if (sessionsRef.current.size === 0) return;
+      if (e.touches.length > 0) return;
+      endAllSessions(e);
+    };
+    const onTouchCancel = (e) => {
+      if (sessionsRef.current.size === 0) return;
+      endAllSessions(e);
+    };
+    const onClickCapture = (e) => {
+      if (Date.now() < suppressClickUntilRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    const target = passThrough ? document : (_a = surfaceRef.current) != null ? _a : document;
+    target.addEventListener("pointerdown", onPointerDown, PASSIVE_CAPTURE);
+    target.addEventListener("pointermove", onPointerMove, ACTIVE_CAPTURE);
+    target.addEventListener("pointerup", onPointerUp, PASSIVE_CAPTURE);
+    target.addEventListener("pointercancel", onPointerCancel, PASSIVE_CAPTURE);
+    document.addEventListener("touchmove", onTouchMove, ACTIVE_CAPTURE);
+    document.addEventListener("touchend", onTouchEnd, PASSIVE_CAPTURE);
+    document.addEventListener("touchcancel", onTouchCancel, PASSIVE_CAPTURE);
+    document.addEventListener("visibilitychange", endAllSessions);
+    window.addEventListener("blur", endAllSessions);
+    if (passThrough) {
+      document.addEventListener("click", onClickCapture, true);
+    }
     return () => {
-      document.removeEventListener("pointerdown", onPointerDown, CAPTURE);
-      document.removeEventListener("pointermove", onPointerMove, CAPTURE);
-      document.removeEventListener("pointerup", endPointer, CAPTURE);
-      document.removeEventListener("pointercancel", endPointer, CAPTURE);
-      activePointersRef.current.clear();
+      target.removeEventListener("pointerdown", onPointerDown, PASSIVE_CAPTURE);
+      target.removeEventListener("pointermove", onPointerMove, ACTIVE_CAPTURE);
+      target.removeEventListener("pointerup", onPointerUp, PASSIVE_CAPTURE);
+      target.removeEventListener("pointercancel", onPointerCancel, PASSIVE_CAPTURE);
+      document.removeEventListener("touchmove", onTouchMove, ACTIVE_CAPTURE);
+      document.removeEventListener("touchend", onTouchEnd, PASSIVE_CAPTURE);
+      document.removeEventListener("touchcancel", onTouchCancel, PASSIVE_CAPTURE);
+      document.removeEventListener("visibilitychange", endAllSessions);
+      window.removeEventListener("blur", endAllSessions);
+      document.removeEventListener("click", onClickCapture, true);
+      sessionsRef.current.clear();
     };
-  }, [enabled, rootRef]);
+  }, [passThrough, rootRef, surfaceRef]);
 }
 
 // src/components/ChaosPad/helpers/spawnGlow.ts
@@ -514,7 +647,7 @@ var createThrottledSpawn = (intervalMs, glowSize) => {
 var throttledSpawn_default = createThrottledSpawn;
 
 // src/components/ChaosPad/GlowFx.tsx
-var import_react10 = require("react");
+var import_react11 = require("react");
 var toPixel = (container, pos) => {
   const { width, height } = container.getBoundingClientRect();
   return {
@@ -525,18 +658,18 @@ var toPixel = (container, pos) => {
 var GlowEffect = ({ containerRef }) => {
   const { color, pos, type, message } = useWebSocket_default();
   const { glowIntervalMs, glowSize } = useChaospadConfig();
-  const posRef = (0, import_react10.useRef)(pos);
-  const typeRef = (0, import_react10.useRef)(type);
-  const colorRef = (0, import_react10.useRef)(color);
+  const posRef = (0, import_react11.useRef)(pos);
+  const typeRef = (0, import_react11.useRef)(type);
+  const colorRef = (0, import_react11.useRef)(color);
   posRef.current = pos;
   typeRef.current = type;
   colorRef.current = color;
-  const throttledSpawn = (0, import_react10.useMemo)(
+  const throttledSpawn = (0, import_react11.useMemo)(
     () => throttledSpawn_default(glowIntervalMs, glowSize),
     [glowIntervalMs, glowSize]
   );
   const isPointerActive = type !== "stop" && pos != null;
-  (0, import_react10.useEffect)(() => {
+  (0, import_react11.useEffect)(() => {
     if (!isPointerActive) return;
     const tick = () => {
       const p = posRef.current;
@@ -551,7 +684,7 @@ var GlowEffect = ({ containerRef }) => {
     const id = window.setInterval(tick, glowIntervalMs);
     return () => window.clearInterval(id);
   }, [isPointerActive, containerRef, throttledSpawn, glowIntervalMs]);
-  (0, import_react10.useEffect)(() => {
+  (0, import_react11.useEffect)(() => {
     if (!message || message.type === "stop") return;
     const container = containerRef.current;
     if (!container) return;
@@ -564,65 +697,24 @@ var GlowEffect = ({ containerRef }) => {
 var GlowFx_default = GlowEffect;
 
 // src/components/ChaosPad/ChaosPad.tsx
-var import_react11 = require("react");
+var import_react12 = require("react");
 var import_jsx_runtime3 = require("react/jsx-runtime");
 function ChaosPad({ className, style }) {
   const { pointerPassThrough } = useChaospadConfig();
-  const rootRef = (0, import_react11.useRef)(null);
-  const glowContainerRef = (0, import_react11.useRef)(null);
+  const rootRef = (0, import_react12.useRef)(null);
+  const surfaceRef = (0, import_react12.useRef)(null);
+  const glowContainerRef = (0, import_react12.useRef)(null);
+  useAudioUnlock();
   useChaosAudio();
   useChaosWebSocket();
-  useGlobalPointerPad(rootRef, pointerPassThrough);
-  const { setType, setPos } = useWebSocket_default();
-  const emitPointer = (e, type) => {
-    var _a;
-    const rect = (_a = rootRef.current) == null ? void 0 : _a.getBoundingClientRect();
-    if (!rect || rect.width === 0 || rect.height === 0) return;
-    setPos({
-      nx: (e.clientX - rect.left) / rect.width,
-      ny: (e.clientY - rect.top) / rect.height
-    });
-    setType(type);
-  };
-  const handlePointerDown = (e) => {
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    emitPointer(e, "start");
-  };
-  const handlePointerMove = (e) => {
-    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
-    emitPointer(e, "move");
-  };
-  const releaseCaptureIfHeld = (e) => {
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-  };
-  const handlePointerUp = (e) => {
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    releaseCaptureIfHeld(e);
-    emitPointer(e, "stop");
-  };
-  const handlePointerCancel = (e) => {
-    releaseCaptureIfHeld(e);
-    emitPointer(e, "stop");
-  };
+  useGlobalPointerPad(rootRef, surfaceRef, pointerPassThrough);
   const rootClass = [
     "chaospad-root",
     pointerPassThrough && "chaospad-pass-through",
     className
   ].filter(Boolean).join(" ");
   return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { ref: rootRef, className: rootClass, style, children: [
-    !pointerPassThrough ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-      "div",
-      {
-        className: "chaospad-surface",
-        onPointerDown: handlePointerDown,
-        onPointerMove: handlePointerMove,
-        onPointerUp: handlePointerUp,
-        onPointerCancel: handlePointerCancel
-      }
-    ) : null,
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { ref: surfaceRef, className: "chaospad-surface", "aria-hidden": "true" }),
     /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { ref: glowContainerRef, className: "chaospad-glow-layer" }),
     /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(GlowFx_default, { containerRef: glowContainerRef })
   ] });
@@ -713,26 +805,27 @@ function buildWsPayload({
 }
 
 // src/components/WsContext/WsContextProvider.tsx
-var import_react12 = require("react");
+var import_react13 = require("react");
 var import_jsx_runtime4 = require("react/jsx-runtime");
 var RECONNECT_MS = 1500;
 var WebSocketProvider = ({ children }) => {
   const { wsUrl, userId: configUserId } = useChaospadConfig();
-  const [pos, setPos] = (0, import_react12.useState)(void 0);
-  const [type, setType] = (0, import_react12.useState)("stop");
-  const wsRef = (0, import_react12.useRef)(null);
-  const userIdRef = (0, import_react12.useRef)(configUserId != null ? configUserId : getUserId());
+  const [pos, setPos] = (0, import_react13.useState)(void 0);
+  const [type, setType] = (0, import_react13.useState)("stop");
+  const wsRef = (0, import_react13.useRef)(null);
+  const userIdRef = (0, import_react13.useRef)(configUserId != null ? configUserId : getUserId());
   const userId = userIdRef.current;
   const color = getColorForUser(userId) || colors[0];
-  const [message, setMessage] = (0, import_react12.useState)(void 0);
-  const messageSeqRef = (0, import_react12.useRef)(0);
-  const typeRef = (0, import_react12.useRef)(type);
-  const posRef = (0, import_react12.useRef)(pos);
-  const colorRef = (0, import_react12.useRef)(color);
+  const [message, setMessage] = (0, import_react13.useState)(void 0);
+  const messageSeqRef = (0, import_react13.useRef)(0);
+  const typeRef = (0, import_react13.useRef)(type);
+  const posRef = (0, import_react13.useRef)(pos);
+  const colorRef = (0, import_react13.useRef)(color);
   typeRef.current = type;
   posRef.current = pos;
   colorRef.current = color;
-  const pendingPayloadRef = (0, import_react12.useRef)(null);
+  const motionListenersRef = (0, import_react13.useRef)(/* @__PURE__ */ new Set());
+  const pendingPayloadRef = (0, import_react13.useRef)(null);
   const sendNow = () => {
     const ws = wsRef.current;
     if (!ws) return;
@@ -751,9 +844,25 @@ var WebSocketProvider = ({ children }) => {
       pendingPayloadRef.current = payload;
     }
   };
-  const sendNowRef = (0, import_react12.useRef)(sendNow);
+  const sendNowRef = (0, import_react13.useRef)(sendNow);
   sendNowRef.current = sendNow;
-  (0, import_react12.useEffect)(() => {
+  const emitMotion = (0, import_react13.useCallback)((nextPos, nextType) => {
+    posRef.current = nextPos;
+    typeRef.current = nextType;
+    setPos(nextPos);
+    setType(nextType);
+    sendNowRef.current();
+    for (const listener of motionListenersRef.current) {
+      listener({ pos: nextPos, type: nextType });
+    }
+  }, []);
+  const subscribeMotion = (0, import_react13.useCallback)((listener) => {
+    motionListenersRef.current.add(listener);
+    return () => {
+      motionListenersRef.current.delete(listener);
+    };
+  }, []);
+  (0, import_react13.useEffect)(() => {
     let alive = true;
     let reconnectTimer;
     let ws = null;
@@ -796,13 +905,21 @@ var WebSocketProvider = ({ children }) => {
       wsRef.current = null;
     };
   }, [wsUrl]);
-  (0, import_react12.useEffect)(() => {
-    sendNow();
-  }, [pos, type, color]);
   return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
     WebSocketContext.Provider,
     {
-      value: { wsRef, type, setType, userId, color, pos, setPos, message },
+      value: {
+        wsRef,
+        type,
+        setType,
+        userId,
+        color,
+        pos,
+        setPos,
+        message,
+        emitMotion,
+        subscribeMotion
+      },
       children
     }
   );
@@ -858,6 +975,10 @@ var CHAOSPAD_CSS = `
 	-webkit-user-select: auto;
 }
 
+.chaospad-pass-through .chaospad-surface {
+	pointer-events: none;
+}
+
 .chaospad-surface {
 	position: absolute;
 	inset: 0;
@@ -881,10 +1002,10 @@ function injectChaospadStyles() {
 }
 
 // src/Chaospad.tsx
-var import_react13 = require("react");
+var import_react14 = require("react");
 var import_jsx_runtime5 = require("react/jsx-runtime");
 function Chaospad({ config, className, style }) {
-  (0, import_react13.useEffect)(() => {
+  (0, import_react14.useEffect)(() => {
     injectChaospadStyles();
   }, []);
   return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ChaospadConfigProvider, { config, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(WsContextProvider_default, { children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(AudioEngineProvider, { children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ChaosPad, { className, style }) }) }) });

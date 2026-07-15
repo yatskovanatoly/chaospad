@@ -7,8 +7,8 @@ import {
 	parseWsMessage,
 } from '@/components/WsContext/helpers/wsMessage'
 import { resolveWebSocketUrl } from '@/types/config'
-import type { Position, WSContextType } from '@/type'
-import { useEffect, useRef, useState } from 'react'
+import type { PadMotionListener, Position, WSContextType } from '@/type'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { WebSocketContext } from './WsContext'
 
 const RECONNECT_MS = 1500
@@ -30,6 +30,8 @@ const WebSocketProvider = ({ children }: { children: React.ReactNode }) => {
 	typeRef.current = type
 	posRef.current = pos
 	colorRef.current = color
+
+	const motionListenersRef = useRef(new Set<PadMotionListener>())
 
 	const pendingPayloadRef = useRef<string | null>(null)
 
@@ -57,6 +59,24 @@ const WebSocketProvider = ({ children }: { children: React.ReactNode }) => {
 
 	const sendNowRef = useRef(sendNow)
 	sendNowRef.current = sendNow
+
+	const emitMotion = useCallback((nextPos: Position | undefined, nextType: 'start' | 'move' | 'stop') => {
+		posRef.current = nextPos
+		typeRef.current = nextType
+		setPos(nextPos)
+		setType(nextType)
+		sendNowRef.current()
+		for (const listener of motionListenersRef.current) {
+			listener({ pos: nextPos, type: nextType })
+		}
+	}, [])
+
+	const subscribeMotion = useCallback((listener: PadMotionListener) => {
+		motionListenersRef.current.add(listener)
+		return () => {
+			motionListenersRef.current.delete(listener)
+		}
+	}, [])
 
 	useEffect(() => {
 		let alive = true
@@ -111,13 +131,20 @@ const WebSocketProvider = ({ children }: { children: React.ReactNode }) => {
 		}
 	}, [wsUrl])
 
-	useEffect(() => {
-		sendNow()
-	}, [pos, type, color])
-
 	return (
 		<WebSocketContext.Provider
-			value={{ wsRef, type, setType, userId, color, pos, setPos, message }}
+			value={{
+				wsRef,
+				type,
+				setType,
+				userId,
+				color,
+				pos,
+				setPos,
+				message,
+				emitMotion,
+				subscribeMotion,
+			}}
 		>
 			{children}
 		</WebSocketContext.Provider>
