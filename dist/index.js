@@ -516,6 +516,46 @@ var getUserId = () => {
   }
 };
 
+// src/components/WsContext/helpers/wsMessage.ts
+function parseWsMessage(raw) {
+  if (!raw || typeof raw !== "object") return void 0;
+  const data = raw;
+  if (!data.userId || !data.type || !data.color) return void 0;
+  let nx;
+  let ny;
+  if (typeof data.nx === "number" && typeof data.ny === "number") {
+    nx = data.nx;
+    ny = data.ny;
+  } else if (typeof data.x === "number" && typeof data.y === "number") {
+    nx = data.x / window.innerWidth;
+    ny = data.y / window.innerHeight;
+  }
+  if (nx == null || ny == null || !Number.isFinite(nx) || !Number.isFinite(ny)) {
+    return void 0;
+  }
+  return {
+    userId: data.userId,
+    type: data.type,
+    color: data.color,
+    nx: Math.min(1, Math.max(0, nx)),
+    ny: Math.min(1, Math.max(0, ny))
+  };
+}
+function buildWsPayload({
+  userId,
+  type,
+  pos,
+  color
+}) {
+  return JSON.stringify({
+    userId,
+    type,
+    nx: pos == null ? void 0 : pos.nx,
+    ny: pos == null ? void 0 : pos.ny,
+    color
+  });
+}
+
 // src/components/WsContext/WsContextProvider.tsx
 import { useEffect as useEffect5, useRef as useRef5, useState as useState3 } from "react";
 import { jsx as jsx4 } from "react/jsx-runtime";
@@ -528,29 +568,60 @@ var WebSocketProvider = ({ children }) => {
   const userId = userIdRef.current;
   const color = getColorForUser(userId) || colors[0];
   const [message, setMessage] = useState3(void 0);
+  const typeRef = useRef5(type);
+  const posRef = useRef5(pos);
+  const colorRef = useRef5(color);
+  typeRef.current = type;
+  posRef.current = pos;
+  colorRef.current = color;
+  const pendingPayloadRef = useRef5(null);
+  const sendNow = () => {
+    const ws = wsRef.current;
+    if (!ws) return;
+    const payload = buildWsPayload({
+      userId: userIdRef.current,
+      type: typeRef.current,
+      pos: posRef.current,
+      color: colorRef.current
+    });
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(payload);
+      pendingPayloadRef.current = null;
+      return;
+    }
+    if (ws.readyState === WebSocket.CONNECTING) {
+      pendingPayloadRef.current = payload;
+    }
+  };
+  const sendNowRef = useRef5(sendNow);
+  sendNowRef.current = sendNow;
   useEffect5(() => {
     const ws = new WebSocket(resolveWebSocketUrl(wsUrl));
     wsRef.current = ws;
+    ws.onopen = () => {
+      if (pendingPayloadRef.current) {
+        ws.send(pendingPayloadRef.current);
+        pendingPayloadRef.current = null;
+      }
+      sendNowRef.current();
+    };
     ws.onmessage = (event) => {
-      const parsedData = JSON.parse(event.data);
-      if (!parsedData) return;
+      const parsed = parseWsMessage(JSON.parse(event.data));
+      if (!parsed) return;
       setMessage((currentMessage) => {
-        if (parsedData.userId !== userIdRef.current) {
-          return JSON.stringify(parsedData) === JSON.stringify(currentMessage) ? currentMessage : parsedData;
-        }
-        return currentMessage;
+        if (parsed.userId === userIdRef.current) return currentMessage;
+        const isSame = currentMessage && currentMessage.userId === parsed.userId && currentMessage.type === parsed.type && currentMessage.nx === parsed.nx && currentMessage.ny === parsed.ny && currentMessage.color === parsed.color;
+        return isSame ? currentMessage : parsed;
       });
     };
-    return () => ws.close();
+    return () => {
+      ws.close();
+      wsRef.current = null;
+    };
   }, [wsUrl]);
   useEffect5(() => {
-    var _a, _b;
-    if (((_a = wsRef.current) == null ? void 0 : _a.readyState) === WebSocket.OPEN) {
-      (_b = wsRef.current) == null ? void 0 : _b.send(
-        JSON.stringify({ userId, type, nx: pos == null ? void 0 : pos.nx, ny: pos == null ? void 0 : pos.ny, color })
-      );
-    }
-  }, [pos, type, userId, color]);
+    sendNow();
+  }, [pos, type, color]);
   return /* @__PURE__ */ jsx4(
     WebSocketContext.Provider,
     {

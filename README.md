@@ -69,6 +69,8 @@ For a remote WebSocket relay, pass `wsUrl` explicitly:
 <Chaospad config={{ wsUrl: 'wss://ws.example.com' }} />
 ```
 
+**Cross-device sync:** every client must use the same reachable `wsUrl`. `ws://localhost:3003` only works on the same machine — phones and other devices need a public address (e.g. `wss://ws.example.com`).
+
 By default the client connects to `ws://localhost:3003`. Start the local relay from your app:
 
 ```bash

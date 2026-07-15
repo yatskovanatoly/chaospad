@@ -3,11 +3,12 @@
 import { WebSocketServer } from 'ws'
 
 const port = Number(process.env.PORT ?? 3003)
+const host = process.env.HOST ?? '0.0.0.0'
 
-const wss = new WebSocketServer({ port })
+const wss = new WebSocketServer({ port, host })
 
 wss.on('listening', () => {
-	console.log(`chaospad ws relay listening on ws://localhost:${port}`)
+	console.log(`chaospad ws relay listening on ws://${host}:${port}`)
 })
 
 wss.on('error', (error) => {
