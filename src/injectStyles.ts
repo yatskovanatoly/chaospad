@@ -40,6 +40,13 @@ const CHAOSPAD_CSS = `
 	-webkit-user-select: none;
 }
 
+.chaospad-root.chaospad-pass-through {
+	pointer-events: none;
+	touch-action: auto;
+	user-select: auto;
+	-webkit-user-select: auto;
+}
+
 .chaospad-surface {
 	position: absolute;
 	inset: 0;

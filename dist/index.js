@@ -56,10 +56,11 @@ var DEFAULT_CHAOSPAD_CONFIG = {
   remoteRelease: 0.5,
   quantize: "chromatic",
   glowIntervalMs: 50,
-  glowSize: 50
+  glowSize: 50,
+  pointerPassThrough: true
 };
 function resolveChaospadConfig(config) {
-  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
   const wsPort = (_b = (_a = config == null ? void 0 : config.wsPort) != null ? _a : readEnvWsPort()) != null ? _b : DEFAULT_WS_PORT;
   return {
     wsUrl: (_c = config == null ? void 0 : config.wsUrl) != null ? _c : resolveDefaultWsUrl(wsPort),
@@ -71,7 +72,8 @@ function resolveChaospadConfig(config) {
     quantize: (_h = config == null ? void 0 : config.quantize) != null ? _h : DEFAULT_CHAOSPAD_CONFIG.quantize,
     userId: config == null ? void 0 : config.userId,
     glowIntervalMs: (_i = config == null ? void 0 : config.glowIntervalMs) != null ? _i : DEFAULT_CHAOSPAD_CONFIG.glowIntervalMs,
-    glowSize: (_j = config == null ? void 0 : config.glowSize) != null ? _j : DEFAULT_CHAOSPAD_CONFIG.glowSize
+    glowSize: (_j = config == null ? void 0 : config.glowSize) != null ? _j : DEFAULT_CHAOSPAD_CONFIG.glowSize,
+    pointerPassThrough: (_k = config == null ? void 0 : config.pointerPassThrough) != null ? _k : DEFAULT_CHAOSPAD_CONFIG.pointerPassThrough
   };
 }
 function resolveWebSocketUrl(url) {
@@ -404,6 +406,56 @@ function useChaosWebSocket() {
   }, [engine, message, quantize, remoteRelease]);
 }
 
+// src/components/ChaosPad/hooks/useGlobalPointerPad.ts
+import { useEffect as useEffect5, useRef as useRef3 } from "react";
+var CAPTURE = { capture: true, passive: true };
+function useGlobalPointerPad(rootRef, enabled) {
+  const { setType, setPos } = useWebSocket_default();
+  const setTypeRef = useRef3(setType);
+  const setPosRef = useRef3(setPos);
+  const activePointersRef = useRef3(/* @__PURE__ */ new Set());
+  setTypeRef.current = setType;
+  setPosRef.current = setPos;
+  useEffect5(() => {
+    if (!enabled) return;
+    const emitPointer = (clientX, clientY, type) => {
+      var _a;
+      const rect = (_a = rootRef.current) == null ? void 0 : _a.getBoundingClientRect();
+      if (!rect || rect.width === 0 || rect.height === 0) return;
+      setPosRef.current({
+        nx: (clientX - rect.left) / rect.width,
+        ny: (clientY - rect.top) / rect.height
+      });
+      setTypeRef.current(type);
+    };
+    const onPointerDown = (e) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      activePointersRef.current.add(e.pointerId);
+      emitPointer(e.clientX, e.clientY, "start");
+    };
+    const onPointerMove = (e) => {
+      if (!activePointersRef.current.has(e.pointerId)) return;
+      emitPointer(e.clientX, e.clientY, "move");
+    };
+    const endPointer = (e) => {
+      if (!activePointersRef.current.has(e.pointerId)) return;
+      activePointersRef.current.delete(e.pointerId);
+      emitPointer(e.clientX, e.clientY, "stop");
+    };
+    document.addEventListener("pointerdown", onPointerDown, CAPTURE);
+    document.addEventListener("pointermove", onPointerMove, CAPTURE);
+    document.addEventListener("pointerup", endPointer, CAPTURE);
+    document.addEventListener("pointercancel", endPointer, CAPTURE);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, CAPTURE);
+      document.removeEventListener("pointermove", onPointerMove, CAPTURE);
+      document.removeEventListener("pointerup", endPointer, CAPTURE);
+      document.removeEventListener("pointercancel", endPointer, CAPTURE);
+      activePointersRef.current.clear();
+    };
+  }, [enabled, rootRef]);
+}
+
 // src/components/ChaosPad/helpers/spawnGlow.ts
 var spawnGlow = (container, x, y, color, size) => {
   const half = size / 2;
@@ -433,7 +485,7 @@ var createThrottledSpawn = (intervalMs, glowSize) => {
 var throttledSpawn_default = createThrottledSpawn;
 
 // src/components/ChaosPad/GlowFx.tsx
-import { useEffect as useEffect5, useMemo, useRef as useRef3 } from "react";
+import { useEffect as useEffect6, useMemo, useRef as useRef4 } from "react";
 var toPixel = (container, pos) => {
   const { width, height } = container.getBoundingClientRect();
   return {
@@ -444,9 +496,9 @@ var toPixel = (container, pos) => {
 var GlowEffect = ({ containerRef }) => {
   const { color, pos, type, message } = useWebSocket_default();
   const { glowIntervalMs, glowSize } = useChaospadConfig();
-  const posRef = useRef3(pos);
-  const typeRef = useRef3(type);
-  const colorRef = useRef3(color);
+  const posRef = useRef4(pos);
+  const typeRef = useRef4(type);
+  const colorRef = useRef4(color);
   posRef.current = pos;
   typeRef.current = type;
   colorRef.current = color;
@@ -455,7 +507,7 @@ var GlowEffect = ({ containerRef }) => {
     [glowIntervalMs, glowSize]
   );
   const isPointerActive = type !== "stop" && pos != null;
-  useEffect5(() => {
+  useEffect6(() => {
     if (!isPointerActive) return;
     const tick = () => {
       const p = posRef.current;
@@ -470,7 +522,7 @@ var GlowEffect = ({ containerRef }) => {
     const id = window.setInterval(tick, glowIntervalMs);
     return () => window.clearInterval(id);
   }, [isPointerActive, containerRef, throttledSpawn, glowIntervalMs]);
-  useEffect5(() => {
+  useEffect6(() => {
     if (!message || message.type === "stop") return;
     const container = containerRef.current;
     if (!container) return;
@@ -483,13 +535,15 @@ var GlowEffect = ({ containerRef }) => {
 var GlowFx_default = GlowEffect;
 
 // src/components/ChaosPad/ChaosPad.tsx
-import { useRef as useRef4 } from "react";
+import { useRef as useRef5 } from "react";
 import { jsx as jsx3, jsxs } from "react/jsx-runtime";
 function ChaosPad({ className, style }) {
-  const rootRef = useRef4(null);
-  const glowContainerRef = useRef4(null);
+  const { pointerPassThrough } = useChaospadConfig();
+  const rootRef = useRef5(null);
+  const glowContainerRef = useRef5(null);
   useChaosAudio();
   useChaosWebSocket();
+  useGlobalPointerPad(rootRef, pointerPassThrough);
   const { setType, setPos } = useWebSocket_default();
   const emitPointer = (e, type) => {
     var _a;
@@ -524,28 +578,25 @@ function ChaosPad({ className, style }) {
     releaseCaptureIfHeld(e);
     emitPointer(e, "stop");
   };
-  return /* @__PURE__ */ jsxs(
-    "div",
-    {
-      ref: rootRef,
-      className: ["chaospad-root", className].filter(Boolean).join(" "),
-      style,
-      children: [
-        /* @__PURE__ */ jsx3(
-          "div",
-          {
-            className: "chaospad-surface",
-            onPointerDown: handlePointerDown,
-            onPointerMove: handlePointerMove,
-            onPointerUp: handlePointerUp,
-            onPointerCancel: handlePointerCancel
-          }
-        ),
-        /* @__PURE__ */ jsx3("div", { ref: glowContainerRef, className: "chaospad-glow-layer" }),
-        /* @__PURE__ */ jsx3(GlowFx_default, { containerRef: glowContainerRef })
-      ]
-    }
-  );
+  const rootClass = [
+    "chaospad-root",
+    pointerPassThrough && "chaospad-pass-through",
+    className
+  ].filter(Boolean).join(" ");
+  return /* @__PURE__ */ jsxs("div", { ref: rootRef, className: rootClass, style, children: [
+    !pointerPassThrough ? /* @__PURE__ */ jsx3(
+      "div",
+      {
+        className: "chaospad-surface",
+        onPointerDown: handlePointerDown,
+        onPointerMove: handlePointerMove,
+        onPointerUp: handlePointerUp,
+        onPointerCancel: handlePointerCancel
+      }
+    ) : null,
+    /* @__PURE__ */ jsx3("div", { ref: glowContainerRef, className: "chaospad-glow-layer" }),
+    /* @__PURE__ */ jsx3(GlowFx_default, { containerRef: glowContainerRef })
+  ] });
 }
 
 // src/components/WsContext/helpers/getUserParams.ts
@@ -633,26 +684,26 @@ function buildWsPayload({
 }
 
 // src/components/WsContext/WsContextProvider.tsx
-import { useEffect as useEffect6, useRef as useRef5, useState as useState4 } from "react";
+import { useEffect as useEffect7, useRef as useRef6, useState as useState4 } from "react";
 import { jsx as jsx4 } from "react/jsx-runtime";
 var RECONNECT_MS = 1500;
 var WebSocketProvider = ({ children }) => {
   const { wsUrl, userId: configUserId } = useChaospadConfig();
   const [pos, setPos] = useState4(void 0);
   const [type, setType] = useState4("stop");
-  const wsRef = useRef5(null);
-  const userIdRef = useRef5(configUserId != null ? configUserId : getUserId());
+  const wsRef = useRef6(null);
+  const userIdRef = useRef6(configUserId != null ? configUserId : getUserId());
   const userId = userIdRef.current;
   const color = getColorForUser(userId) || colors[0];
   const [message, setMessage] = useState4(void 0);
-  const messageSeqRef = useRef5(0);
-  const typeRef = useRef5(type);
-  const posRef = useRef5(pos);
-  const colorRef = useRef5(color);
+  const messageSeqRef = useRef6(0);
+  const typeRef = useRef6(type);
+  const posRef = useRef6(pos);
+  const colorRef = useRef6(color);
   typeRef.current = type;
   posRef.current = pos;
   colorRef.current = color;
-  const pendingPayloadRef = useRef5(null);
+  const pendingPayloadRef = useRef6(null);
   const sendNow = () => {
     const ws = wsRef.current;
     if (!ws) return;
@@ -671,9 +722,9 @@ var WebSocketProvider = ({ children }) => {
       pendingPayloadRef.current = payload;
     }
   };
-  const sendNowRef = useRef5(sendNow);
+  const sendNowRef = useRef6(sendNow);
   sendNowRef.current = sendNow;
-  useEffect6(() => {
+  useEffect7(() => {
     let alive = true;
     let reconnectTimer;
     let ws = null;
@@ -716,7 +767,7 @@ var WebSocketProvider = ({ children }) => {
       wsRef.current = null;
     };
   }, [wsUrl]);
-  useEffect6(() => {
+  useEffect7(() => {
     sendNow();
   }, [pos, type, color]);
   return /* @__PURE__ */ jsx4(
@@ -771,6 +822,13 @@ var CHAOSPAD_CSS = `
 	-webkit-user-select: none;
 }
 
+.chaospad-root.chaospad-pass-through {
+	pointer-events: none;
+	touch-action: auto;
+	user-select: auto;
+	-webkit-user-select: auto;
+}
+
 .chaospad-surface {
 	position: absolute;
 	inset: 0;
@@ -794,10 +852,10 @@ function injectChaospadStyles() {
 }
 
 // src/Chaospad.tsx
-import { useEffect as useEffect7 } from "react";
+import { useEffect as useEffect8 } from "react";
 import { jsx as jsx5 } from "react/jsx-runtime";
 function Chaospad({ config, className, style }) {
-  useEffect7(() => {
+  useEffect8(() => {
     injectChaospadStyles();
   }, []);
   return /* @__PURE__ */ jsx5(ChaospadConfigProvider, { config, children: /* @__PURE__ */ jsx5(WsContextProvider_default, { children: /* @__PURE__ */ jsx5(AudioEngineProvider, { children: /* @__PURE__ */ jsx5(ChaosPad, { className, style }) }) }) });

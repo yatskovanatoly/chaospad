@@ -24,6 +24,12 @@ type ChaospadConfig = {
     glowIntervalMs?: number;
     /** Glow circle diameter in px. Default: 50 */
     glowSize?: number;
+    /**
+     * React to touches anywhere on the page without blocking clicks on UI below.
+     * Uses document capture listeners + `pointer-events: none` on the pad layer.
+     * Default: `true`
+     */
+    pointerPassThrough?: boolean;
 };
 type ResolvedChaospadConfig = Required<Omit<ChaospadConfig, 'userId'>> & {
     userId?: string;

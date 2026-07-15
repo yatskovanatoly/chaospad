@@ -63,6 +63,21 @@ export function App() {
 }
 ```
 
+## Touch pass-through (default)
+
+By default chaospad is a **non-blocking overlay**: it reacts to every touch on the page (audio, glow, WS) but does **not** steal clicks from buttons and links underneath.
+
+How it works:
+
+1. `pointer-events: none` on the pad layer — the browser delivers the event to the real target (button, link, …)
+2. `document` listeners in **capture** phase — chaospad observes the same event before it reaches the target
+
+Disable for a standalone pad that owns the whole surface:
+
+```tsx
+<Chaospad config={{ pointerPassThrough: false }} />
+```
+
 ## WebSocket relay
 
 `<Chaospad />` picks the relay URL automatically:

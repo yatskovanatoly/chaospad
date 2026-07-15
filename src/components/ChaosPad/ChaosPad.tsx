@@ -1,7 +1,9 @@
 'use client'
 
+import { useChaospadConfig } from '@/context/ChaospadConfigContext'
 import { useChaosAudio } from './hooks/useChaosAudio'
 import { useChaosWebSocket } from './hooks/useChaosWs'
+import { useGlobalPointerPad } from './hooks/useGlobalPointerPad'
 import useWebSocket from '../WsContext/useWebSocket'
 import { MotionType } from '../WsContext/WsContextProvider'
 import GlowEffect from './GlowFx'
@@ -13,11 +15,13 @@ type ChaosPadProps = {
 }
 
 export default function ChaosPad({ className, style }: ChaosPadProps) {
+	const { pointerPassThrough } = useChaospadConfig()
 	const rootRef = useRef<HTMLDivElement>(null)
 	const glowContainerRef = useRef<HTMLDivElement>(null)
 
 	useChaosAudio()
 	useChaosWebSocket()
+	useGlobalPointerPad(rootRef, pointerPassThrough)
 
 	const { setType, setPos } = useWebSocket()
 
@@ -59,19 +63,25 @@ export default function ChaosPad({ className, style }: ChaosPadProps) {
 		emitPointer(e, 'stop')
 	}
 
+	const rootClass = [
+		'chaospad-root',
+		pointerPassThrough && 'chaospad-pass-through',
+		className,
+	]
+		.filter(Boolean)
+		.join(' ')
+
 	return (
-		<div
-			ref={rootRef}
-			className={['chaospad-root', className].filter(Boolean).join(' ')}
-			style={style}
-		>
-			<div
-				className='chaospad-surface'
-				onPointerDown={handlePointerDown}
-				onPointerMove={handlePointerMove}
-				onPointerUp={handlePointerUp}
-				onPointerCancel={handlePointerCancel}
-			/>
+		<div ref={rootRef} className={rootClass} style={style}>
+			{!pointerPassThrough ? (
+				<div
+					className='chaospad-surface'
+					onPointerDown={handlePointerDown}
+					onPointerMove={handlePointerMove}
+					onPointerUp={handlePointerUp}
+					onPointerCancel={handlePointerCancel}
+				/>
+			) : null}
 			<div ref={glowContainerRef} className='chaospad-glow-layer' />
 			<GlowEffect containerRef={glowContainerRef} />
 		</div>

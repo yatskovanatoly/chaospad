@@ -21,6 +21,12 @@ export type ChaospadConfig = {
 	glowIntervalMs?: number
 	/** Glow circle diameter in px. Default: 50 */
 	glowSize?: number
+	/**
+	 * React to touches anywhere on the page without blocking clicks on UI below.
+	 * Uses document capture listeners + `pointer-events: none` on the pad layer.
+	 * Default: `true`
+	 */
+	pointerPassThrough?: boolean
 }
 
 export type ResolvedChaospadConfig = Required<
@@ -82,6 +88,7 @@ export const DEFAULT_CHAOSPAD_CONFIG: Required<
 	quantize: 'chromatic',
 	glowIntervalMs: 50,
 	glowSize: 50,
+	pointerPassThrough: true,
 }
 
 export function resolveChaospadConfig(
@@ -102,6 +109,9 @@ export function resolveChaospadConfig(
 		glowIntervalMs:
 			config?.glowIntervalMs ?? DEFAULT_CHAOSPAD_CONFIG.glowIntervalMs,
 		glowSize: config?.glowSize ?? DEFAULT_CHAOSPAD_CONFIG.glowSize,
+		pointerPassThrough:
+			config?.pointerPassThrough ??
+			DEFAULT_CHAOSPAD_CONFIG.pointerPassThrough,
 	}
 }
 
