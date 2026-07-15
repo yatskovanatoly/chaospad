@@ -21,25 +21,35 @@ var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 // src/types/config.ts
 var DEFAULT_WS_PORT = 3003;
 var DEFAULT_WS_URL = `ws://localhost:${DEFAULT_WS_PORT}`;
-function resolveDefaultWsUrl() {
-  if (typeof window === "undefined") return DEFAULT_WS_URL;
-  const { hostname, protocol } = window.location;
-  const isHttps = protocol === "https:";
-  if (!isHttps) {
-    return `ws://${hostname}:${DEFAULT_WS_PORT}`;
+var readEnv = (key) => {
+  if (typeof process === "undefined") return void 0;
+  return process.env[key];
+};
+var readEnvWsUrl = () => {
+  var _a;
+  return (_a = readEnv("NEXT_PUBLIC_CHAOSPAD_WS_URL")) != null ? _a : readEnv("CHAOSPAD_WS_URL");
+};
+var readEnvWsPort = () => {
+  var _a;
+  const raw = (_a = readEnv("NEXT_PUBLIC_CHAOSPAD_WS_PORT")) != null ? _a : readEnv("CHAOSPAD_WS_PORT");
+  if (!raw) return void 0;
+  const port = Number(raw);
+  return Number.isFinite(port) ? port : void 0;
+};
+function resolveDefaultWsUrl(wsPort = DEFAULT_WS_PORT) {
+  var _a;
+  const fromEnv = readEnvWsUrl();
+  if (fromEnv) return fromEnv;
+  const port = (_a = readEnvWsPort()) != null ? _a : wsPort;
+  if (typeof window === "undefined") {
+    return `ws://localhost:${port}`;
   }
-  if (hostname === "localhost" || hostname === "127.0.0.1") {
-    return `wss://localhost:${DEFAULT_WS_PORT}`;
-  }
-  const parts = hostname.split(".");
-  if (parts.length >= 2) {
-    const rootDomain = parts.slice(-2).join(".");
-    return `wss://ws.${rootDomain}`;
-  }
-  return `wss://${hostname}:${DEFAULT_WS_PORT}`;
+  const wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${wsProto}//${window.location.hostname}:${port}`;
 }
 var DEFAULT_CHAOSPAD_CONFIG = {
   wsUrl: DEFAULT_WS_URL,
+  wsPort: DEFAULT_WS_PORT,
   volume: 1,
   reverbLevel: 0.5,
   release: 0.5,
@@ -49,17 +59,19 @@ var DEFAULT_CHAOSPAD_CONFIG = {
   glowSize: 50
 };
 function resolveChaospadConfig(config) {
-  var _a, _b, _c, _d, _e, _f, _g, _h;
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
+  const wsPort = (_b = (_a = config == null ? void 0 : config.wsPort) != null ? _a : readEnvWsPort()) != null ? _b : DEFAULT_WS_PORT;
   return {
-    wsUrl: (_a = config == null ? void 0 : config.wsUrl) != null ? _a : resolveDefaultWsUrl(),
-    volume: (_b = config == null ? void 0 : config.volume) != null ? _b : DEFAULT_CHAOSPAD_CONFIG.volume,
-    reverbLevel: (_c = config == null ? void 0 : config.reverbLevel) != null ? _c : DEFAULT_CHAOSPAD_CONFIG.reverbLevel,
-    release: (_d = config == null ? void 0 : config.release) != null ? _d : DEFAULT_CHAOSPAD_CONFIG.release,
-    remoteRelease: (_e = config == null ? void 0 : config.remoteRelease) != null ? _e : DEFAULT_CHAOSPAD_CONFIG.remoteRelease,
-    quantize: (_f = config == null ? void 0 : config.quantize) != null ? _f : DEFAULT_CHAOSPAD_CONFIG.quantize,
+    wsUrl: (_c = config == null ? void 0 : config.wsUrl) != null ? _c : resolveDefaultWsUrl(wsPort),
+    wsPort,
+    volume: (_d = config == null ? void 0 : config.volume) != null ? _d : DEFAULT_CHAOSPAD_CONFIG.volume,
+    reverbLevel: (_e = config == null ? void 0 : config.reverbLevel) != null ? _e : DEFAULT_CHAOSPAD_CONFIG.reverbLevel,
+    release: (_f = config == null ? void 0 : config.release) != null ? _f : DEFAULT_CHAOSPAD_CONFIG.release,
+    remoteRelease: (_g = config == null ? void 0 : config.remoteRelease) != null ? _g : DEFAULT_CHAOSPAD_CONFIG.remoteRelease,
+    quantize: (_h = config == null ? void 0 : config.quantize) != null ? _h : DEFAULT_CHAOSPAD_CONFIG.quantize,
     userId: config == null ? void 0 : config.userId,
-    glowIntervalMs: (_g = config == null ? void 0 : config.glowIntervalMs) != null ? _g : DEFAULT_CHAOSPAD_CONFIG.glowIntervalMs,
-    glowSize: (_h = config == null ? void 0 : config.glowSize) != null ? _h : DEFAULT_CHAOSPAD_CONFIG.glowSize
+    glowIntervalMs: (_i = config == null ? void 0 : config.glowIntervalMs) != null ? _i : DEFAULT_CHAOSPAD_CONFIG.glowIntervalMs,
+    glowSize: (_j = config == null ? void 0 : config.glowSize) != null ? _j : DEFAULT_CHAOSPAD_CONFIG.glowSize
   };
 }
 function resolveWebSocketUrl(url) {
@@ -69,7 +81,12 @@ function resolveWebSocketUrl(url) {
 }
 
 // src/context/ChaospadConfigContext.tsx
-import { createContext, useContext, useMemo } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState
+} from "react";
 import { jsx } from "react/jsx-runtime";
 var ChaospadConfigContext = createContext(
   null
@@ -78,7 +95,10 @@ function ChaospadConfigProvider({
   config,
   children
 }) {
-  const resolved = useMemo(() => resolveChaospadConfig(config), [config]);
+  const [resolved, setResolved] = useState(() => resolveChaospadConfig(config));
+  useEffect(() => {
+    setResolved(resolveChaospadConfig(config));
+  }, [config]);
   return /* @__PURE__ */ jsx(ChaospadConfigContext.Provider, { value: resolved, children });
 }
 function useChaospadConfig() {
@@ -217,7 +237,7 @@ var Voice = class {
 };
 
 // src/components/AudioEngineContext/AudioEngineProvider.tsx
-import { useEffect, useState } from "react";
+import { useEffect as useEffect2, useState as useState2 } from "react";
 
 // src/components/AudioEngineContext/AudioEngineContext.ts
 import { createContext as createContext2 } from "react";
@@ -228,8 +248,8 @@ import { jsx as jsx2 } from "react/jsx-runtime";
 function AudioEngineProvider({
   children
 }) {
-  const [engine, setEngine] = useState(null);
-  useEffect(() => {
+  const [engine, setEngine] = useState2(null);
+  useEffect2(() => {
     const _engine = new AudioEngine();
     setEngine(_engine);
     return () => {
@@ -251,7 +271,7 @@ function useAudioEngine() {
 }
 
 // src/components/ChaosPad/hooks/useChaosAudio.ts
-import { useCallback, useEffect as useEffect2, useRef, useState as useState2 } from "react";
+import { useCallback, useEffect as useEffect3, useRef, useState as useState3 } from "react";
 
 // src/components/WsContext/useWebSocket.ts
 import { useContext as useContext3 } from "react";
@@ -275,13 +295,13 @@ function useChaosAudio() {
   const { volume, reverbLevel, release, quantize } = useChaospadConfig();
   const voiceRef = useRef(null);
   const oscillatorRef = useRef(null);
-  const [isActive, setIsActive] = useState2(false);
+  const [isActive, setIsActive] = useState3(false);
   const { pos, type: motionType } = useWebSocket_default();
-  useEffect2(() => {
+  useEffect3(() => {
     engine.setVolume(volume);
     engine.setReverbLevel(reverbLevel);
   }, [engine, volume, reverbLevel]);
-  useEffect2(() => {
+  useEffect3(() => {
     if (voiceRef.current) voiceRef.current.quantize = quantize;
   }, [quantize]);
   const startAudio = useCallback(() => {
@@ -307,7 +327,7 @@ function useChaosAudio() {
     }
     setIsActive(false);
   }, [release]);
-  useEffect2(() => {
+  useEffect3(() => {
     var _a;
     if (motionType === "start" && !isActive) {
       startAudio();
@@ -357,18 +377,18 @@ var handleRemoteEvent = ({
 var handleRemoteAudio_default = handleRemoteEvent;
 
 // src/components/ChaosPad/hooks/useChaosWs.ts
-import { useEffect as useEffect3, useRef as useRef2 } from "react";
+import { useEffect as useEffect4, useRef as useRef2 } from "react";
 function useChaosWebSocket() {
   const engine = useAudioEngine();
   const { quantize, remoteRelease } = useChaospadConfig();
   const { message } = useWebSocket_default();
   const remoteUsersRef = useRef2({});
-  useEffect3(() => {
+  useEffect4(() => {
     for (const voice of Object.values(remoteUsersRef.current)) {
       voice.quantize = quantize;
     }
   }, [quantize]);
-  useEffect3(() => {
+  useEffect4(() => {
     if (!message) return;
     const { userId, type, nx, ny } = message;
     handleRemoteAudio_default({
@@ -413,7 +433,7 @@ var createThrottledSpawn = (intervalMs, glowSize) => {
 var throttledSpawn_default = createThrottledSpawn;
 
 // src/components/ChaosPad/GlowFx.tsx
-import { useEffect as useEffect4, useMemo as useMemo2, useRef as useRef3 } from "react";
+import { useEffect as useEffect5, useMemo, useRef as useRef3 } from "react";
 var toPixel = (container, pos) => {
   const { width, height } = container.getBoundingClientRect();
   return {
@@ -430,12 +450,12 @@ var GlowEffect = ({ containerRef }) => {
   posRef.current = pos;
   typeRef.current = type;
   colorRef.current = color;
-  const throttledSpawn = useMemo2(
+  const throttledSpawn = useMemo(
     () => throttledSpawn_default(glowIntervalMs, glowSize),
     [glowIntervalMs, glowSize]
   );
   const isPointerActive = type !== "stop" && pos != null;
-  useEffect4(() => {
+  useEffect5(() => {
     if (!isPointerActive) return;
     const tick = () => {
       const p = posRef.current;
@@ -450,7 +470,7 @@ var GlowEffect = ({ containerRef }) => {
     const id = window.setInterval(tick, glowIntervalMs);
     return () => window.clearInterval(id);
   }, [isPointerActive, containerRef, throttledSpawn, glowIntervalMs]);
-  useEffect4(() => {
+  useEffect5(() => {
     if (!message || message.type === "stop") return;
     const container = containerRef.current;
     if (!container) return;
@@ -613,18 +633,18 @@ function buildWsPayload({
 }
 
 // src/components/WsContext/WsContextProvider.tsx
-import { useEffect as useEffect5, useRef as useRef5, useState as useState3 } from "react";
+import { useEffect as useEffect6, useRef as useRef5, useState as useState4 } from "react";
 import { jsx as jsx4 } from "react/jsx-runtime";
 var RECONNECT_MS = 1500;
 var WebSocketProvider = ({ children }) => {
   const { wsUrl, userId: configUserId } = useChaospadConfig();
-  const [pos, setPos] = useState3(void 0);
-  const [type, setType] = useState3("stop");
+  const [pos, setPos] = useState4(void 0);
+  const [type, setType] = useState4("stop");
   const wsRef = useRef5(null);
   const userIdRef = useRef5(configUserId != null ? configUserId : getUserId());
   const userId = userIdRef.current;
   const color = getColorForUser(userId) || colors[0];
-  const [message, setMessage] = useState3(void 0);
+  const [message, setMessage] = useState4(void 0);
   const messageSeqRef = useRef5(0);
   const typeRef = useRef5(type);
   const posRef = useRef5(pos);
@@ -653,7 +673,7 @@ var WebSocketProvider = ({ children }) => {
   };
   const sendNowRef = useRef5(sendNow);
   sendNowRef.current = sendNow;
-  useEffect5(() => {
+  useEffect6(() => {
     let alive = true;
     let reconnectTimer;
     let ws = null;
@@ -696,7 +716,7 @@ var WebSocketProvider = ({ children }) => {
       wsRef.current = null;
     };
   }, [wsUrl]);
-  useEffect5(() => {
+  useEffect6(() => {
     sendNow();
   }, [pos, type, color]);
   return /* @__PURE__ */ jsx4(
@@ -774,10 +794,10 @@ function injectChaospadStyles() {
 }
 
 // src/Chaospad.tsx
-import { useEffect as useEffect6 } from "react";
+import { useEffect as useEffect7 } from "react";
 import { jsx as jsx5 } from "react/jsx-runtime";
 function Chaospad({ config, className, style }) {
-  useEffect6(() => {
+  useEffect7(() => {
     injectChaospadStyles();
   }, []);
   return /* @__PURE__ */ jsx5(ChaospadConfigProvider, { config, children: /* @__PURE__ */ jsx5(WsContextProvider_default, { children: /* @__PURE__ */ jsx5(AudioEngineProvider, { children: /* @__PURE__ */ jsx5(ChaosPad, { className, style }) }) }) });

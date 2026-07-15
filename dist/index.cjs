@@ -51,25 +51,35 @@ module.exports = __toCommonJS(index_exports);
 // src/types/config.ts
 var DEFAULT_WS_PORT = 3003;
 var DEFAULT_WS_URL = `ws://localhost:${DEFAULT_WS_PORT}`;
-function resolveDefaultWsUrl() {
-  if (typeof window === "undefined") return DEFAULT_WS_URL;
-  const { hostname, protocol } = window.location;
-  const isHttps = protocol === "https:";
-  if (!isHttps) {
-    return `ws://${hostname}:${DEFAULT_WS_PORT}`;
+var readEnv = (key) => {
+  if (typeof process === "undefined") return void 0;
+  return process.env[key];
+};
+var readEnvWsUrl = () => {
+  var _a;
+  return (_a = readEnv("NEXT_PUBLIC_CHAOSPAD_WS_URL")) != null ? _a : readEnv("CHAOSPAD_WS_URL");
+};
+var readEnvWsPort = () => {
+  var _a;
+  const raw = (_a = readEnv("NEXT_PUBLIC_CHAOSPAD_WS_PORT")) != null ? _a : readEnv("CHAOSPAD_WS_PORT");
+  if (!raw) return void 0;
+  const port = Number(raw);
+  return Number.isFinite(port) ? port : void 0;
+};
+function resolveDefaultWsUrl(wsPort = DEFAULT_WS_PORT) {
+  var _a;
+  const fromEnv = readEnvWsUrl();
+  if (fromEnv) return fromEnv;
+  const port = (_a = readEnvWsPort()) != null ? _a : wsPort;
+  if (typeof window === "undefined") {
+    return `ws://localhost:${port}`;
   }
-  if (hostname === "localhost" || hostname === "127.0.0.1") {
-    return `wss://localhost:${DEFAULT_WS_PORT}`;
-  }
-  const parts = hostname.split(".");
-  if (parts.length >= 2) {
-    const rootDomain = parts.slice(-2).join(".");
-    return `wss://ws.${rootDomain}`;
-  }
-  return `wss://${hostname}:${DEFAULT_WS_PORT}`;
+  const wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${wsProto}//${window.location.hostname}:${port}`;
 }
 var DEFAULT_CHAOSPAD_CONFIG = {
   wsUrl: DEFAULT_WS_URL,
+  wsPort: DEFAULT_WS_PORT,
   volume: 1,
   reverbLevel: 0.5,
   release: 0.5,
@@ -79,17 +89,19 @@ var DEFAULT_CHAOSPAD_CONFIG = {
   glowSize: 50
 };
 function resolveChaospadConfig(config) {
-  var _a, _b, _c, _d, _e, _f, _g, _h;
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
+  const wsPort = (_b = (_a = config == null ? void 0 : config.wsPort) != null ? _a : readEnvWsPort()) != null ? _b : DEFAULT_WS_PORT;
   return {
-    wsUrl: (_a = config == null ? void 0 : config.wsUrl) != null ? _a : resolveDefaultWsUrl(),
-    volume: (_b = config == null ? void 0 : config.volume) != null ? _b : DEFAULT_CHAOSPAD_CONFIG.volume,
-    reverbLevel: (_c = config == null ? void 0 : config.reverbLevel) != null ? _c : DEFAULT_CHAOSPAD_CONFIG.reverbLevel,
-    release: (_d = config == null ? void 0 : config.release) != null ? _d : DEFAULT_CHAOSPAD_CONFIG.release,
-    remoteRelease: (_e = config == null ? void 0 : config.remoteRelease) != null ? _e : DEFAULT_CHAOSPAD_CONFIG.remoteRelease,
-    quantize: (_f = config == null ? void 0 : config.quantize) != null ? _f : DEFAULT_CHAOSPAD_CONFIG.quantize,
+    wsUrl: (_c = config == null ? void 0 : config.wsUrl) != null ? _c : resolveDefaultWsUrl(wsPort),
+    wsPort,
+    volume: (_d = config == null ? void 0 : config.volume) != null ? _d : DEFAULT_CHAOSPAD_CONFIG.volume,
+    reverbLevel: (_e = config == null ? void 0 : config.reverbLevel) != null ? _e : DEFAULT_CHAOSPAD_CONFIG.reverbLevel,
+    release: (_f = config == null ? void 0 : config.release) != null ? _f : DEFAULT_CHAOSPAD_CONFIG.release,
+    remoteRelease: (_g = config == null ? void 0 : config.remoteRelease) != null ? _g : DEFAULT_CHAOSPAD_CONFIG.remoteRelease,
+    quantize: (_h = config == null ? void 0 : config.quantize) != null ? _h : DEFAULT_CHAOSPAD_CONFIG.quantize,
     userId: config == null ? void 0 : config.userId,
-    glowIntervalMs: (_g = config == null ? void 0 : config.glowIntervalMs) != null ? _g : DEFAULT_CHAOSPAD_CONFIG.glowIntervalMs,
-    glowSize: (_h = config == null ? void 0 : config.glowSize) != null ? _h : DEFAULT_CHAOSPAD_CONFIG.glowSize
+    glowIntervalMs: (_i = config == null ? void 0 : config.glowIntervalMs) != null ? _i : DEFAULT_CHAOSPAD_CONFIG.glowIntervalMs,
+    glowSize: (_j = config == null ? void 0 : config.glowSize) != null ? _j : DEFAULT_CHAOSPAD_CONFIG.glowSize
   };
 }
 function resolveWebSocketUrl(url) {
@@ -108,7 +120,10 @@ function ChaospadConfigProvider({
   config,
   children
 }) {
-  const resolved = (0, import_react.useMemo)(() => resolveChaospadConfig(config), [config]);
+  const [resolved, setResolved] = (0, import_react.useState)(() => resolveChaospadConfig(config));
+  (0, import_react.useEffect)(() => {
+    setResolved(resolveChaospadConfig(config));
+  }, [config]);
   return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChaospadConfigContext.Provider, { value: resolved, children });
 }
 function useChaospadConfig() {

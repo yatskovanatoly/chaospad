@@ -5,7 +5,13 @@ import {
 	type ChaospadConfig,
 	type ResolvedChaospadConfig,
 } from '@/types/config'
-import { createContext, useContext, useMemo, type ReactNode } from 'react'
+import {
+	createContext,
+	useContext,
+	useEffect,
+	useState,
+	type ReactNode,
+} from 'react'
 
 const ChaospadConfigContext = createContext<ResolvedChaospadConfig | null>(
 	null,
@@ -18,7 +24,11 @@ export function ChaospadConfigProvider({
 	config?: ChaospadConfig
 	children: ReactNode
 }) {
-	const resolved = useMemo(() => resolveChaospadConfig(config), [config])
+	const [resolved, setResolved] = useState(() => resolveChaospadConfig(config))
+
+	useEffect(() => {
+		setResolved(resolveChaospadConfig(config))
+	}, [config])
 
 	return (
 		<ChaospadConfigContext.Provider value={resolved}>

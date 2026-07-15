@@ -6,6 +6,8 @@ type QuantizeMode = 'none' | 'chromatic';
 type ChaospadConfig = {
     /** WebSocket relay URL. Auto-detected from page host if omitted. */
     wsUrl?: string;
+    /** WS port when URL is auto-detected. Default: 3003 */
+    wsPort?: number;
     /** Master output volume, 0–1. Default: 1 */
     volume?: number;
     /** Reverb wet level, 0–1. Default: 0.5 */
@@ -30,12 +32,12 @@ declare const DEFAULT_WS_PORT = 3003;
 /** SSR fallback */
 declare const DEFAULT_WS_URL = "ws://localhost:3003";
 /**
- * Pick relay URL from the current page:
+ * Relay URL from env or current page host:
  * - http://localhost:3000 -> ws://localhost:3003
  * - http://192.168.x.x:3000 -> ws://192.168.x.x:3003
- * - https://zuyefa.ru -> wss://ws.zuyefa.ru
+ * - https://example.com -> wss://example.com:3003
  */
-declare function resolveDefaultWsUrl(): string;
+declare function resolveDefaultWsUrl(wsPort?: number): string;
 declare const DEFAULT_CHAOSPAD_CONFIG: Required<Omit<ChaospadConfig, 'userId'>>;
 declare function resolveChaospadConfig(config?: ChaospadConfig): ResolvedChaospadConfig;
 declare function resolveWebSocketUrl(url: string): string;

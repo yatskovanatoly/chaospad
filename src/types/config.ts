@@ -3,6 +3,8 @@ import type { QuantizeMode } from '@/components/AudioEngineContext/helpers/quant
 export type ChaospadConfig = {
 	/** WebSocket relay URL. Auto-detected from page host if omitted. */
 	wsUrl?: string
+	/** WS port when URL is auto-detected. Default: 3003 */
+	wsPort?: number
 	/** Master output volume, 0–1. Default: 1 */
 	volume?: number
 	/** Reverb wet level, 0–1. Default: 0.5 */
@@ -32,39 +34,47 @@ export const DEFAULT_WS_PORT = 3003
 /** SSR fallback */
 export const DEFAULT_WS_URL = `ws://localhost:${DEFAULT_WS_PORT}`
 
+const readEnv = (key: string): string | undefined => {
+	if (typeof process === 'undefined') return undefined
+	return process.env[key]
+}
+
+const readEnvWsUrl = (): string | undefined =>
+	readEnv('NEXT_PUBLIC_CHAOSPAD_WS_URL') ?? readEnv('CHAOSPAD_WS_URL')
+
+const readEnvWsPort = (): number | undefined => {
+	const raw =
+		readEnv('NEXT_PUBLIC_CHAOSPAD_WS_PORT') ?? readEnv('CHAOSPAD_WS_PORT')
+	if (!raw) return undefined
+	const port = Number(raw)
+	return Number.isFinite(port) ? port : undefined
+}
+
 /**
- * Pick relay URL from the current page:
+ * Relay URL from env or current page host:
  * - http://localhost:3000 -> ws://localhost:3003
  * - http://192.168.x.x:3000 -> ws://192.168.x.x:3003
- * - https://zuyefa.ru -> wss://ws.zuyefa.ru
+ * - https://example.com -> wss://example.com:3003
  */
-export function resolveDefaultWsUrl(): string {
-	if (typeof window === 'undefined') return DEFAULT_WS_URL
+export function resolveDefaultWsUrl(wsPort = DEFAULT_WS_PORT): string {
+	const fromEnv = readEnvWsUrl()
+	if (fromEnv) return fromEnv
 
-	const { hostname, protocol } = window.location
-	const isHttps = protocol === 'https:'
+	const port = readEnvWsPort() ?? wsPort
 
-	if (!isHttps) {
-		return `ws://${hostname}:${DEFAULT_WS_PORT}`
+	if (typeof window === 'undefined') {
+		return `ws://localhost:${port}`
 	}
 
-	if (hostname === 'localhost' || hostname === '127.0.0.1') {
-		return `wss://localhost:${DEFAULT_WS_PORT}`
-	}
-
-	const parts = hostname.split('.')
-	if (parts.length >= 2) {
-		const rootDomain = parts.slice(-2).join('.')
-		return `wss://ws.${rootDomain}`
-	}
-
-	return `wss://${hostname}:${DEFAULT_WS_PORT}`
+	const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+	return `${wsProto}//${window.location.hostname}:${port}`
 }
 
 export const DEFAULT_CHAOSPAD_CONFIG: Required<
 	Omit<ChaospadConfig, 'userId'>
 > = {
 	wsUrl: DEFAULT_WS_URL,
+	wsPort: DEFAULT_WS_PORT,
 	volume: 1,
 	reverbLevel: 0.5,
 	release: 0.5,
@@ -77,8 +87,11 @@ export const DEFAULT_CHAOSPAD_CONFIG: Required<
 export function resolveChaospadConfig(
 	config?: ChaospadConfig,
 ): ResolvedChaospadConfig {
+	const wsPort = config?.wsPort ?? readEnvWsPort() ?? DEFAULT_WS_PORT
+
 	return {
-		wsUrl: config?.wsUrl ?? resolveDefaultWsUrl(),
+		wsUrl: config?.wsUrl ?? resolveDefaultWsUrl(wsPort),
+		wsPort,
 		volume: config?.volume ?? DEFAULT_CHAOSPAD_CONFIG.volume,
 		reverbLevel: config?.reverbLevel ?? DEFAULT_CHAOSPAD_CONFIG.reverbLevel,
 		release: config?.release ?? DEFAULT_CHAOSPAD_CONFIG.release,

@@ -65,15 +65,21 @@ export function App() {
 
 ## WebSocket relay
 
-By default the client connects to a relay derived from the page URL:
+`<Chaospad />` picks the relay URL automatically:
 
 | Page | Default `wsUrl` |
 |------|-----------------|
 | `http://localhost:3000` | `ws://localhost:3003` |
 | `http://192.168.x.x:3000` | `ws://192.168.x.x:3003` |
-| `https://zuyefa.ru` | `wss://ws.zuyefa.ru` |
+| `https://example.com` | `wss://example.com:3003` |
 
-Override when needed:
+Override via env (Next.js) or config:
+
+```bash
+# .env.local
+NEXT_PUBLIC_CHAOSPAD_WS_URL=wss://ws.example.com
+NEXT_PUBLIC_CHAOSPAD_WS_PORT=3003
+```
 
 ```tsx
 <Chaospad config={{ wsUrl: 'wss://ws.example.com' }} />
@@ -81,11 +87,7 @@ Override when needed:
 
 **Cross-device sync:** every client must hit the same relay. For LAN dev, run `chaospad-ws` on your computer and open the app on phones via `http://192.168.x.x:3000` (not `localhost`).
 
-```bash
-npx chaospad-ws
-```
-
-Or add a script to your app's `package.json`:
+In your app's `package.json`:
 
 ```json
 {
@@ -95,11 +97,17 @@ Or add a script to your app's `package.json`:
 }
 ```
 
-Then run in a separate terminal:
+```bash
+npx chaospad-ws
+```
+
+Two terminals (app + relay) or one combined demo script:
 
 ```bash
-npm run dev:ws
+npm run dev
 ```
+
+(`dev` in this repo starts both Next.js demo and `chaospad-ws`.)
 
 Custom port:
 
