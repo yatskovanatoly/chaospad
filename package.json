@@ -2,6 +2,10 @@
 	"name": "chaospad",
 	"version": "0.2.0",
 	"description": "WebSocket-powered touch pad with generative audio and cursor glow",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/yatskovanatoly/chaospad.git"
+	},
 	"type": "module",
 	"main": "./dist/index.cjs",
 	"module": "./dist/index.js",
@@ -30,6 +34,7 @@
 		"dev:ws": "next dev --turbopack & bun ./src/ws-server.mjs",
 		"build": "tsup",
 		"build:demo": "next build",
+		"prepare": "npm run build",
 		"start": "next start",
 		"lint": "next lint",
 		"prepublishOnly": "npm run build"
