@@ -45,8 +45,14 @@ const readEnv = (key: string): string | undefined => {
 	return process.env[key]
 }
 
-const readEnvWsUrl = (): string | undefined =>
-	readEnv('NEXT_PUBLIC_CHAOSPAD_WS_URL') ?? readEnv('CHAOSPAD_WS_URL')
+const readEnvWsUrl = (): string | undefined => {
+	const raw =
+		readEnv('NEXT_PUBLIC_CHAOSPAD_WS_URL') ??
+		readEnv('CHAOSPAD_WS_URL') ??
+		readEnv('NEXT_PUBLIC_WS_URL')
+	const trimmed = raw?.trim()
+	return trimmed || undefined
+}
 
 const readEnvWsPort = (): number | undefined => {
 	const raw =
@@ -95,9 +101,10 @@ export function resolveChaospadConfig(
 	config?: ChaospadConfig,
 ): ResolvedChaospadConfig {
 	const wsPort = config?.wsPort ?? readEnvWsPort() ?? DEFAULT_WS_PORT
+	const wsUrl = config?.wsUrl?.trim() || resolveDefaultWsUrl(wsPort)
 
 	return {
-		wsUrl: config?.wsUrl ?? resolveDefaultWsUrl(wsPort),
+		wsUrl,
 		wsPort,
 		volume: config?.volume ?? DEFAULT_CHAOSPAD_CONFIG.volume,
 		reverbLevel: config?.reverbLevel ?? DEFAULT_CHAOSPAD_CONFIG.reverbLevel,
@@ -117,6 +124,7 @@ export function resolveChaospadConfig(
 
 export function resolveWebSocketUrl(url: string): string {
 	const t = url.trim()
+	if (!t) return resolveDefaultWsUrl()
 	if (t.startsWith('ws://') || t.startsWith('wss://')) return t
 	return `ws://${t}`
 }

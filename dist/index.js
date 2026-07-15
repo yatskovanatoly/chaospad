@@ -26,8 +26,10 @@ var readEnv = (key) => {
   return process.env[key];
 };
 var readEnvWsUrl = () => {
-  var _a;
-  return (_a = readEnv("NEXT_PUBLIC_CHAOSPAD_WS_URL")) != null ? _a : readEnv("CHAOSPAD_WS_URL");
+  var _a, _b;
+  const raw = (_b = (_a = readEnv("NEXT_PUBLIC_CHAOSPAD_WS_URL")) != null ? _a : readEnv("CHAOSPAD_WS_URL")) != null ? _b : readEnv("NEXT_PUBLIC_WS_URL");
+  const trimmed = raw == null ? void 0 : raw.trim();
+  return trimmed || void 0;
 };
 var readEnvWsPort = () => {
   var _a;
@@ -62,8 +64,9 @@ var DEFAULT_CHAOSPAD_CONFIG = {
 function resolveChaospadConfig(config) {
   var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
   const wsPort = (_b = (_a = config == null ? void 0 : config.wsPort) != null ? _a : readEnvWsPort()) != null ? _b : DEFAULT_WS_PORT;
+  const wsUrl = ((_c = config == null ? void 0 : config.wsUrl) == null ? void 0 : _c.trim()) || resolveDefaultWsUrl(wsPort);
   return {
-    wsUrl: (_c = config == null ? void 0 : config.wsUrl) != null ? _c : resolveDefaultWsUrl(wsPort),
+    wsUrl,
     wsPort,
     volume: (_d = config == null ? void 0 : config.volume) != null ? _d : DEFAULT_CHAOSPAD_CONFIG.volume,
     reverbLevel: (_e = config == null ? void 0 : config.reverbLevel) != null ? _e : DEFAULT_CHAOSPAD_CONFIG.reverbLevel,
@@ -78,6 +81,7 @@ function resolveChaospadConfig(config) {
 }
 function resolveWebSocketUrl(url) {
   const t = url.trim();
+  if (!t) return resolveDefaultWsUrl();
   if (t.startsWith("ws://") || t.startsWith("wss://")) return t;
   return `ws://${t}`;
 }
