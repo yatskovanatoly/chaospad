@@ -1,7 +1,7 @@
 import { useChaospadConfig } from '@/context/ChaospadConfigContext'
 import type { Voice } from '@/components/AudioEngineContext/AudioEngine'
 import { useAudioEngine } from '@/components/AudioEngineContext'
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import useWebSocket from '../../WsContext/useWebSocket'
 
 export function useChaosAudio() {
@@ -9,7 +9,7 @@ export function useChaosAudio() {
 	const { volume, reverbLevel, release, quantize } = useChaospadConfig()
 	const voiceRef = useRef<Voice | null>(null)
 	const oscillatorRef = useRef<OscillatorNode | null>(null)
-	const isActiveRef = useRef(false)
+	const [isActive, setIsActive] = useState(false)
 	const { pos, type: motionType } = useWebSocket()
 
 	useEffect(() => {
@@ -28,7 +28,7 @@ export function useChaosAudio() {
 			const voice = engine.createVoice(pos ?? { nx: 0, ny: 0 }, quantize)
 			voiceRef.current = voice
 			oscillatorRef.current = voice.oscillator
-			isActiveRef.current = true
+			setIsActive(true)
 		}
 		if (engine.ctx.state === 'suspended') {
 			void engine.ctx.resume().then(run)
@@ -43,21 +43,21 @@ export function useChaosAudio() {
 			voiceRef.current = null
 			oscillatorRef.current = null
 		}
-		isActiveRef.current = false
+		setIsActive(false)
 	}, [release])
 
 	useEffect(() => {
-		if (motionType === 'start' && !isActiveRef.current) {
+		if (motionType === 'start' && !isActive) {
 			startAudio()
-		} else if (motionType === 'move' && isActiveRef.current && pos) {
+		} else if (motionType === 'move' && isActive && pos) {
 			voiceRef.current?.updatePosition(pos.nx, pos.ny)
-		} else if (motionType === 'stop' && isActiveRef.current) {
+		} else if (motionType === 'stop' && isActive) {
 			stopAudio()
 		}
-	}, [motionType, pos, startAudio, stopAudio])
+	}, [isActive, motionType, pos, startAudio, stopAudio])
 
 	return {
-		isActive: isActiveRef.current,
+		isActive,
 		oscillatorRef,
 	}
 }

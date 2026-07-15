@@ -16,7 +16,7 @@ export default function ChaosPad({ className, style }: ChaosPadProps) {
 	const rootRef = useRef<HTMLDivElement>(null)
 	const glowContainerRef = useRef<HTMLDivElement>(null)
 
-	const { isActive, oscillatorRef } = useChaosAudio()
+	useChaosAudio()
 	useChaosWebSocket()
 
 	const { setType, setPos } = useWebSocket()
@@ -38,7 +38,7 @@ export default function ChaosPad({ className, style }: ChaosPadProps) {
 	}
 
 	const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-		if (!isActive || !oscillatorRef.current) return
+		if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
 		emitPointer(e, 'move')
 	}
 

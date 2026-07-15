@@ -268,7 +268,7 @@ function useChaosAudio() {
   const { volume, reverbLevel, release, quantize } = useChaospadConfig();
   const voiceRef = (0, import_react7.useRef)(null);
   const oscillatorRef = (0, import_react7.useRef)(null);
-  const isActiveRef = (0, import_react7.useRef)(false);
+  const [isActive, setIsActive] = (0, import_react7.useState)(false);
   const { pos, type: motionType } = useWebSocket_default();
   (0, import_react7.useEffect)(() => {
     engine.setVolume(volume);
@@ -284,7 +284,7 @@ function useChaosAudio() {
       const voice = engine.createVoice(pos != null ? pos : { nx: 0, ny: 0 }, quantize);
       voiceRef.current = voice;
       oscillatorRef.current = voice.oscillator;
-      isActiveRef.current = true;
+      setIsActive(true);
     };
     if (engine.ctx.state === "suspended") {
       void engine.ctx.resume().then(run);
@@ -298,20 +298,20 @@ function useChaosAudio() {
       voiceRef.current = null;
       oscillatorRef.current = null;
     }
-    isActiveRef.current = false;
+    setIsActive(false);
   }, [release]);
   (0, import_react7.useEffect)(() => {
     var _a;
-    if (motionType === "start" && !isActiveRef.current) {
+    if (motionType === "start" && !isActive) {
       startAudio();
-    } else if (motionType === "move" && isActiveRef.current && pos) {
+    } else if (motionType === "move" && isActive && pos) {
       (_a = voiceRef.current) == null ? void 0 : _a.updatePosition(pos.nx, pos.ny);
-    } else if (motionType === "stop" && isActiveRef.current) {
+    } else if (motionType === "stop" && isActive) {
       stopAudio();
     }
-  }, [motionType, pos, startAudio, stopAudio]);
+  }, [isActive, motionType, pos, startAudio, stopAudio]);
   return {
-    isActive: isActiveRef.current,
+    isActive,
     oscillatorRef
   };
 }
@@ -459,7 +459,7 @@ var import_jsx_runtime3 = require("react/jsx-runtime");
 function ChaosPad({ className, style }) {
   const rootRef = (0, import_react10.useRef)(null);
   const glowContainerRef = (0, import_react10.useRef)(null);
-  const { isActive, oscillatorRef } = useChaosAudio();
+  useChaosAudio();
   useChaosWebSocket();
   const { setType, setPos } = useWebSocket_default();
   const emitPointer = (e, type) => {
@@ -478,7 +478,7 @@ function ChaosPad({ className, style }) {
     emitPointer(e, "start");
   };
   const handlePointerMove = (e) => {
-    if (!isActive || !oscillatorRef.current) return;
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
     emitPointer(e, "move");
   };
   const releaseCaptureIfHeld = (e) => {

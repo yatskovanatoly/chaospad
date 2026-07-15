@@ -213,7 +213,7 @@ function useAudioEngine() {
 }
 
 // src/components/ChaosPad/hooks/useChaosAudio.ts
-import { useCallback, useEffect as useEffect2, useRef } from "react";
+import { useCallback, useEffect as useEffect2, useRef, useState as useState2 } from "react";
 
 // src/components/WsContext/useWebSocket.ts
 import { useContext as useContext3 } from "react";
@@ -237,7 +237,7 @@ function useChaosAudio() {
   const { volume, reverbLevel, release, quantize } = useChaospadConfig();
   const voiceRef = useRef(null);
   const oscillatorRef = useRef(null);
-  const isActiveRef = useRef(false);
+  const [isActive, setIsActive] = useState2(false);
   const { pos, type: motionType } = useWebSocket_default();
   useEffect2(() => {
     engine.setVolume(volume);
@@ -253,7 +253,7 @@ function useChaosAudio() {
       const voice = engine.createVoice(pos != null ? pos : { nx: 0, ny: 0 }, quantize);
       voiceRef.current = voice;
       oscillatorRef.current = voice.oscillator;
-      isActiveRef.current = true;
+      setIsActive(true);
     };
     if (engine.ctx.state === "suspended") {
       void engine.ctx.resume().then(run);
@@ -267,20 +267,20 @@ function useChaosAudio() {
       voiceRef.current = null;
       oscillatorRef.current = null;
     }
-    isActiveRef.current = false;
+    setIsActive(false);
   }, [release]);
   useEffect2(() => {
     var _a;
-    if (motionType === "start" && !isActiveRef.current) {
+    if (motionType === "start" && !isActive) {
       startAudio();
-    } else if (motionType === "move" && isActiveRef.current && pos) {
+    } else if (motionType === "move" && isActive && pos) {
       (_a = voiceRef.current) == null ? void 0 : _a.updatePosition(pos.nx, pos.ny);
-    } else if (motionType === "stop" && isActiveRef.current) {
+    } else if (motionType === "stop" && isActive) {
       stopAudio();
     }
-  }, [motionType, pos, startAudio, stopAudio]);
+  }, [isActive, motionType, pos, startAudio, stopAudio]);
   return {
-    isActive: isActiveRef.current,
+    isActive,
     oscillatorRef
   };
 }
@@ -428,7 +428,7 @@ import { jsx as jsx3, jsxs } from "react/jsx-runtime";
 function ChaosPad({ className, style }) {
   const rootRef = useRef4(null);
   const glowContainerRef = useRef4(null);
-  const { isActive, oscillatorRef } = useChaosAudio();
+  useChaosAudio();
   useChaosWebSocket();
   const { setType, setPos } = useWebSocket_default();
   const emitPointer = (e, type) => {
@@ -447,7 +447,7 @@ function ChaosPad({ className, style }) {
     emitPointer(e, "start");
   };
   const handlePointerMove = (e) => {
-    if (!isActive || !oscillatorRef.current) return;
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
     emitPointer(e, "move");
   };
   const releaseCaptureIfHeld = (e) => {
@@ -515,17 +515,17 @@ var getUserId = () => {
 };
 
 // src/components/WsContext/WsContextProvider.tsx
-import { useEffect as useEffect5, useRef as useRef5, useState as useState2 } from "react";
+import { useEffect as useEffect5, useRef as useRef5, useState as useState3 } from "react";
 import { jsx as jsx4 } from "react/jsx-runtime";
 var WebSocketProvider = ({ children }) => {
   const { wsUrl, userId: configUserId } = useChaospadConfig();
-  const [pos, setPos] = useState2(void 0);
-  const [type, setType] = useState2("stop");
+  const [pos, setPos] = useState3(void 0);
+  const [type, setType] = useState3("stop");
   const wsRef = useRef5(null);
   const userIdRef = useRef5(configUserId != null ? configUserId : getUserId());
   const userId = userIdRef.current;
   const color = getColorForUser(userId) || colors[0];
-  const [message, setMessage] = useState2(void 0);
+  const [message, setMessage] = useState3(void 0);
   useEffect5(() => {
     const ws = new WebSocket(resolveWebSocketUrl(wsUrl));
     wsRef.current = ws;
