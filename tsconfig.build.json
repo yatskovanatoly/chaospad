@@ -19,5 +19,5 @@
 		}
 	},
 	"include": ["src/**/*.ts", "src/**/*.tsx"],
-	"exclude": ["src/app", "src/ws-server.mjs", "node_modules", "dist"]
+	"exclude": ["src/app", "node_modules", "dist"]
 }

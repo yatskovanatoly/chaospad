@@ -62,7 +62,7 @@ For local dev with the in-repo relay:
 npm run dev
 ```
 
-(`dev` still runs Next.js and `src/ws-server.mjs` together; production should use the containerized server and `NEXT_PUBLIC_WS_URL` pointing at it.)
+(`dev` still runs Next.js and `chaospad-ws` together; production should use the containerized server and `NEXT_PUBLIC_WS_URL` pointing at it.)
 
 ## 3. Checklist
 

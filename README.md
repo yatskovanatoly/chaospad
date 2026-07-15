@@ -69,12 +69,38 @@ For a remote WebSocket relay, pass `wsUrl` explicitly:
 <Chaospad config={{ wsUrl: 'wss://ws.example.com' }} />
 ```
 
-By default the client connects to `ws://localhost:3003`. Start the local relay with:
+By default the client connects to `ws://localhost:3003`. Start the local relay from your app:
+
+```bash
+npx chaospad-ws
+```
+
+Or add a script to your app's `package.json`:
+
+```json
+{
+  "scripts": {
+    "dev:ws": "chaospad-ws"
+  }
+}
+```
+
+Then run in a separate terminal:
 
 ```bash
 npm run dev:ws
-# or
-bun ./src/ws-server.mjs
+```
+
+Custom port:
+
+```bash
+PORT=3004 npx chaospad-ws
+```
+
+Point the client at it:
+
+```tsx
+<Chaospad config={{ wsUrl: 'ws://localhost:3004' }} />
 ```
 
 ## Configuration
@@ -100,10 +126,11 @@ Optional: `import 'chaospad/styles.css'` for SSR setups.
 ```bash
 npm run dev          # Next.js demo app
 npm run dev:ws       # demo + local ws-server on :3003
+npm run ws           # ws relay only
 npm run build        # build npm package → dist/
 npm run build:demo   # build demo app
 ```
 
 ## WebSocket server
 
-The relay server (`src/ws-server.mjs`) is not bundled into the npm package. Deploy it separately or run locally on port 3003.
+The relay is included as the `chaospad-ws` CLI. It broadcasts pointer events between clients and is not bundled into the React component.

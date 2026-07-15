@@ -1,6 +1,6 @@
 {
 	"name": "chaospad",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"description": "WebSocket-powered touch pad with generative audio and cursor glow",
 	"repository": {
 		"type": "git",
@@ -10,6 +10,9 @@
 	"main": "./dist/index.cjs",
 	"module": "./dist/index.js",
 	"types": "./dist/index.d.ts",
+	"bin": {
+		"chaospad-ws": "./bin/chaospad-ws.mjs"
+	},
 	"exports": {
 		".": {
 			"import": {
@@ -24,14 +27,16 @@
 		"./styles.css": "./dist/styles.css"
 	},
 	"files": [
-		"dist"
+		"dist",
+		"bin"
 	],
 	"sideEffects": [
 		"*.css"
 	],
 	"scripts": {
 		"dev": "next dev --turbopack",
-		"dev:ws": "next dev --turbopack & bun ./src/ws-server.mjs",
+		"dev:ws": "next dev --turbopack & node bin/chaospad-ws.mjs",
+		"ws": "node bin/chaospad-ws.mjs",
 		"build": "tsup",
 		"build:demo": "next build",
 		"prepare": "npm run build",
@@ -42,6 +47,9 @@
 	"peerDependencies": {
 		"react": ">=18",
 		"react-dom": ">=18"
+	},
+	"dependencies": {
+		"ws": "^8.20.0"
 	},
 	"devDependencies": {
 		"@eslint/eslintrc": "^3.3.5",
@@ -57,7 +65,6 @@
 		"react-dom": "^19.2.5",
 		"tailwindcss": "^4.2.2",
 		"tsup": "^8.5.1",
-		"typescript": "^5.9.3",
-		"ws": "^8.20.0"
+		"typescript": "^5.9.3"
 	}
 }
