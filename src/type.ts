@@ -16,6 +16,7 @@ type Message =
 	| (Pick<WSContextType, 'color' | 'userId' | 'type'> & {
 			nx: number
 			ny: number
+			seq?: number
 	  })
 	| undefined
 

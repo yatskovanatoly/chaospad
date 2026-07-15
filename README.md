@@ -63,15 +63,23 @@ export function App() {
 }
 ```
 
-For a remote WebSocket relay, pass `wsUrl` explicitly:
+## WebSocket relay
+
+By default the client connects to a relay derived from the page URL:
+
+| Page | Default `wsUrl` |
+|------|-----------------|
+| `http://localhost:3000` | `ws://localhost:3003` |
+| `http://192.168.x.x:3000` | `ws://192.168.x.x:3003` |
+| `https://zuyefa.ru` | `wss://ws.zuyefa.ru` |
+
+Override when needed:
 
 ```tsx
 <Chaospad config={{ wsUrl: 'wss://ws.example.com' }} />
 ```
 
-**Cross-device sync:** every client must use the same reachable `wsUrl`. `ws://localhost:3003` only works on the same machine — phones and other devices need a public address (e.g. `wss://ws.example.com`).
-
-By default the client connects to `ws://localhost:3003`. Start the local relay from your app:
+**Cross-device sync:** every client must hit the same relay. For LAN dev, run `chaospad-ws` on your computer and open the app on phones via `http://192.168.x.x:3000` (not `localhost`).
 
 ```bash
 npx chaospad-ws

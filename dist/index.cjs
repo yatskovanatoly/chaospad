@@ -1,8 +1,25 @@
 "use strict";
 var __defProp = Object.defineProperty;
+var __defProps = Object.defineProperties;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
 var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getOwnPropSymbols = Object.getOwnPropertySymbols;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __propIsEnum = Object.prototype.propertyIsEnumerable;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __spreadValues = (a, b) => {
+  for (var prop in b || (b = {}))
+    if (__hasOwnProp.call(b, prop))
+      __defNormalProp(a, prop, b[prop]);
+  if (__getOwnPropSymbols)
+    for (var prop of __getOwnPropSymbols(b)) {
+      if (__propIsEnum.call(b, prop))
+        __defNormalProp(a, prop, b[prop]);
+    }
+  return a;
+};
+var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
@@ -22,15 +39,35 @@ var index_exports = {};
 __export(index_exports, {
   Chaospad: () => Chaospad,
   DEFAULT_CHAOSPAD_CONFIG: () => DEFAULT_CHAOSPAD_CONFIG,
+  DEFAULT_WS_PORT: () => DEFAULT_WS_PORT,
   DEFAULT_WS_URL: () => DEFAULT_WS_URL,
   default: () => Chaospad_default,
   resolveChaospadConfig: () => resolveChaospadConfig,
+  resolveDefaultWsUrl: () => resolveDefaultWsUrl,
   resolveWebSocketUrl: () => resolveWebSocketUrl
 });
 module.exports = __toCommonJS(index_exports);
 
 // src/types/config.ts
-var DEFAULT_WS_URL = "ws://localhost:3003";
+var DEFAULT_WS_PORT = 3003;
+var DEFAULT_WS_URL = `ws://localhost:${DEFAULT_WS_PORT}`;
+function resolveDefaultWsUrl() {
+  if (typeof window === "undefined") return DEFAULT_WS_URL;
+  const { hostname, protocol } = window.location;
+  const isHttps = protocol === "https:";
+  if (!isHttps) {
+    return `ws://${hostname}:${DEFAULT_WS_PORT}`;
+  }
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    return `wss://localhost:${DEFAULT_WS_PORT}`;
+  }
+  const parts = hostname.split(".");
+  if (parts.length >= 2) {
+    const rootDomain = parts.slice(-2).join(".");
+    return `wss://ws.${rootDomain}`;
+  }
+  return `wss://${hostname}:${DEFAULT_WS_PORT}`;
+}
 var DEFAULT_CHAOSPAD_CONFIG = {
   wsUrl: DEFAULT_WS_URL,
   volume: 1,
@@ -44,7 +81,7 @@ var DEFAULT_CHAOSPAD_CONFIG = {
 function resolveChaospadConfig(config) {
   var _a, _b, _c, _d, _e, _f, _g, _h;
   return {
-    wsUrl: (_a = config == null ? void 0 : config.wsUrl) != null ? _a : DEFAULT_CHAOSPAD_CONFIG.wsUrl,
+    wsUrl: (_a = config == null ? void 0 : config.wsUrl) != null ? _a : resolveDefaultWsUrl(),
     volume: (_b = config == null ? void 0 : config.volume) != null ? _b : DEFAULT_CHAOSPAD_CONFIG.volume,
     reverbLevel: (_c = config == null ? void 0 : config.reverbLevel) != null ? _c : DEFAULT_CHAOSPAD_CONFIG.reverbLevel,
     release: (_d = config == null ? void 0 : config.release) != null ? _d : DEFAULT_CHAOSPAD_CONFIG.release,
@@ -608,6 +645,7 @@ function buildWsPayload({
 // src/components/WsContext/WsContextProvider.tsx
 var import_react11 = require("react");
 var import_jsx_runtime4 = require("react/jsx-runtime");
+var RECONNECT_MS = 1500;
 var WebSocketProvider = ({ children }) => {
   const { wsUrl, userId: configUserId } = useChaospadConfig();
   const [pos, setPos] = (0, import_react11.useState)(void 0);
@@ -617,6 +655,7 @@ var WebSocketProvider = ({ children }) => {
   const userId = userIdRef.current;
   const color = getColorForUser(userId) || colors[0];
   const [message, setMessage] = (0, import_react11.useState)(void 0);
+  const messageSeqRef = (0, import_react11.useRef)(0);
   const typeRef = (0, import_react11.useRef)(type);
   const posRef = (0, import_react11.useRef)(pos);
   const colorRef = (0, import_react11.useRef)(color);
@@ -645,26 +684,45 @@ var WebSocketProvider = ({ children }) => {
   const sendNowRef = (0, import_react11.useRef)(sendNow);
   sendNowRef.current = sendNow;
   (0, import_react11.useEffect)(() => {
-    const ws = new WebSocket(resolveWebSocketUrl(wsUrl));
-    wsRef.current = ws;
-    ws.onopen = () => {
-      if (pendingPayloadRef.current) {
-        ws.send(pendingPayloadRef.current);
-        pendingPayloadRef.current = null;
-      }
-      sendNowRef.current();
+    let alive = true;
+    let reconnectTimer;
+    let ws = null;
+    const connect = () => {
+      if (!alive) return;
+      const url = resolveWebSocketUrl(wsUrl);
+      ws = new WebSocket(url);
+      wsRef.current = ws;
+      ws.onopen = () => {
+        if (pendingPayloadRef.current) {
+          ws == null ? void 0 : ws.send(pendingPayloadRef.current);
+          pendingPayloadRef.current = null;
+        }
+        sendNowRef.current();
+      };
+      ws.onmessage = (event) => {
+        try {
+          const parsed = parseWsMessage(JSON.parse(event.data));
+          if (!parsed || parsed.userId === userIdRef.current) return;
+          messageSeqRef.current += 1;
+          setMessage(__spreadProps(__spreadValues({}, parsed), { seq: messageSeqRef.current }));
+        } catch (error) {
+          console.warn("[chaospad] failed to parse ws message", error);
+        }
+      };
+      ws.onerror = () => {
+        console.warn(`[chaospad] ws error (${url})`);
+      };
+      ws.onclose = () => {
+        wsRef.current = null;
+        if (!alive) return;
+        reconnectTimer = setTimeout(connect, RECONNECT_MS);
+      };
     };
-    ws.onmessage = (event) => {
-      const parsed = parseWsMessage(JSON.parse(event.data));
-      if (!parsed) return;
-      setMessage((currentMessage) => {
-        if (parsed.userId === userIdRef.current) return currentMessage;
-        const isSame = currentMessage && currentMessage.userId === parsed.userId && currentMessage.type === parsed.type && currentMessage.nx === parsed.nx && currentMessage.ny === parsed.ny && currentMessage.color === parsed.color;
-        return isSame ? currentMessage : parsed;
-      });
-    };
+    connect();
     return () => {
-      ws.close();
+      alive = false;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      ws == null ? void 0 : ws.close();
       wsRef.current = null;
     };
   }, [wsUrl]);
@@ -712,10 +770,11 @@ var CHAOSPAD_CSS = `
 }
 
 .chaospad-root {
-	position: relative;
+	position: fixed;
+	inset: 0;
+	z-index: 0;
 	width: 100%;
 	height: 100%;
-	min-height: 100%;
 	overflow: hidden;
 	touch-action: none;
 	user-select: none;
@@ -758,8 +817,10 @@ var Chaospad_default = Chaospad;
 0 && (module.exports = {
   Chaospad,
   DEFAULT_CHAOSPAD_CONFIG,
+  DEFAULT_WS_PORT,
   DEFAULT_WS_URL,
   resolveChaospadConfig,
+  resolveDefaultWsUrl,
   resolveWebSocketUrl
 });
 //# sourceMappingURL=index.cjs.map

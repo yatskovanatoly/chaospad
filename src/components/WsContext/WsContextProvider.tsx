@@ -11,6 +11,8 @@ import type { Position, WSContextType } from '@/type'
 import { useEffect, useRef, useState } from 'react'
 import { WebSocketContext } from './WsContext'
 
+const RECONNECT_MS = 1500
+
 const WebSocketProvider = ({ children }: { children: React.ReactNode }) => {
 	const { wsUrl, userId: configUserId } = useChaospadConfig()
 	const [pos, setPos] = useState<Position | undefined>(undefined)
@@ -20,6 +22,7 @@ const WebSocketProvider = ({ children }: { children: React.ReactNode }) => {
 	const userId = userIdRef.current
 	const color = getColorForUser(userId) || colors[0]
 	const [message, setMessage] = useState<WSContextType['message']>(undefined)
+	const messageSeqRef = useRef(0)
 
 	const typeRef = useRef(type)
 	const posRef = useRef(pos)
@@ -56,38 +59,54 @@ const WebSocketProvider = ({ children }: { children: React.ReactNode }) => {
 	sendNowRef.current = sendNow
 
 	useEffect(() => {
-		const ws = new WebSocket(resolveWebSocketUrl(wsUrl))
-		wsRef.current = ws
+		let alive = true
+		let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+		let ws: WebSocket | null = null
 
-		ws.onopen = () => {
-			if (pendingPayloadRef.current) {
-				ws.send(pendingPayloadRef.current)
-				pendingPayloadRef.current = null
+		const connect = () => {
+			if (!alive) return
+
+			const url = resolveWebSocketUrl(wsUrl)
+			ws = new WebSocket(url)
+			wsRef.current = ws
+
+			ws.onopen = () => {
+				if (pendingPayloadRef.current) {
+					ws?.send(pendingPayloadRef.current)
+					pendingPayloadRef.current = null
+				}
+				sendNowRef.current()
 			}
-			sendNowRef.current()
+
+			ws.onmessage = (event) => {
+				try {
+					const parsed = parseWsMessage(JSON.parse(event.data))
+					if (!parsed || parsed.userId === userIdRef.current) return
+
+					messageSeqRef.current += 1
+					setMessage({ ...parsed, seq: messageSeqRef.current })
+				} catch (error) {
+					console.warn('[chaospad] failed to parse ws message', error)
+				}
+			}
+
+			ws.onerror = () => {
+				console.warn(`[chaospad] ws error (${url})`)
+			}
+
+			ws.onclose = () => {
+				wsRef.current = null
+				if (!alive) return
+				reconnectTimer = setTimeout(connect, RECONNECT_MS)
+			}
 		}
 
-		ws.onmessage = (event) => {
-			const parsed = parseWsMessage(JSON.parse(event.data))
-			if (!parsed) return
-
-			setMessage((currentMessage) => {
-				if (parsed.userId === userIdRef.current) return currentMessage
-
-				const isSame =
-					currentMessage &&
-					currentMessage.userId === parsed.userId &&
-					currentMessage.type === parsed.type &&
-					currentMessage.nx === parsed.nx &&
-					currentMessage.ny === parsed.ny &&
-					currentMessage.color === parsed.color
-
-				return isSame ? currentMessage : parsed
-			})
-		}
+		connect()
 
 		return () => {
-			ws.close()
+			alive = false
+			if (reconnectTimer) clearTimeout(reconnectTimer)
+			ws?.close()
 			wsRef.current = null
 		}
 	}, [wsUrl])

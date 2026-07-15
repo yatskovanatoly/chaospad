@@ -4,7 +4,7 @@ import { CSSProperties } from 'react';
 type QuantizeMode = 'none' | 'chromatic';
 
 type ChaospadConfig = {
-    /** WebSocket relay URL. По умолчанию `ws://localhost:3003`. */
+    /** WebSocket relay URL. Auto-detected from page host if omitted. */
     wsUrl?: string;
     /** Master output volume, 0–1. Default: 1 */
     volume?: number;
@@ -26,7 +26,16 @@ type ChaospadConfig = {
 type ResolvedChaospadConfig = Required<Omit<ChaospadConfig, 'userId'>> & {
     userId?: string;
 };
+declare const DEFAULT_WS_PORT = 3003;
+/** SSR fallback */
 declare const DEFAULT_WS_URL = "ws://localhost:3003";
+/**
+ * Pick relay URL from the current page:
+ * - http://localhost:3000 -> ws://localhost:3003
+ * - http://192.168.x.x:3000 -> ws://192.168.x.x:3003
+ * - https://zuyefa.ru -> wss://ws.zuyefa.ru
+ */
+declare function resolveDefaultWsUrl(): string;
 declare const DEFAULT_CHAOSPAD_CONFIG: Required<Omit<ChaospadConfig, 'userId'>>;
 declare function resolveChaospadConfig(config?: ChaospadConfig): ResolvedChaospadConfig;
 declare function resolveWebSocketUrl(url: string): string;
@@ -38,4 +47,4 @@ type ChaospadProps = {
 };
 declare function Chaospad({ config, className, style }: ChaospadProps): react_jsx_runtime.JSX.Element;
 
-export { Chaospad, type ChaospadConfig, type ChaospadProps, DEFAULT_CHAOSPAD_CONFIG, DEFAULT_WS_URL, type QuantizeMode, type ResolvedChaospadConfig, Chaospad as default, resolveChaospadConfig, resolveWebSocketUrl };
+export { Chaospad, type ChaospadConfig, type ChaospadProps, DEFAULT_CHAOSPAD_CONFIG, DEFAULT_WS_PORT, DEFAULT_WS_URL, type QuantizeMode, type ResolvedChaospadConfig, Chaospad as default, resolveChaospadConfig, resolveDefaultWsUrl, resolveWebSocketUrl };
