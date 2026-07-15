@@ -10,25 +10,42 @@ type RawWsMessage = {
 	y?: number
 }
 
+const clamp01 = (n: number) => Math.min(1, Math.max(0, n))
+
+const resolveCoords = (data: RawWsMessage) => {
+	if (typeof data.nx === 'number' && typeof data.ny === 'number') {
+		return { nx: data.nx, ny: data.ny }
+	}
+
+	if (typeof data.x === 'number' && typeof data.y === 'number') {
+		return {
+			nx: data.x / window.innerWidth,
+			ny: data.y / window.innerHeight,
+		}
+	}
+
+	return null
+}
+
 export function parseWsMessage(raw: unknown): WSContextType['message'] {
 	if (!raw || typeof raw !== 'object') return undefined
 
 	const data = raw as RawWsMessage
 	if (!data.userId || !data.type || !data.color) return undefined
 
-	let nx: number | undefined
-	let ny: number | undefined
-
-	if (typeof data.nx === 'number' && typeof data.ny === 'number') {
-		nx = data.nx
-		ny = data.ny
-	} else if (typeof data.x === 'number' && typeof data.y === 'number') {
-		// Legacy pixel coords — normalize for current viewport
-		nx = data.x / window.innerWidth
-		ny = data.y / window.innerHeight
+	if (data.type === 'stop') {
+		const coords = resolveCoords(data)
+		return {
+			userId: data.userId,
+			type: 'stop',
+			color: data.color,
+			nx: coords ? clamp01(coords.nx) : 0,
+			ny: coords ? clamp01(coords.ny) : 0,
+		}
 	}
 
-	if (nx == null || ny == null || !Number.isFinite(nx) || !Number.isFinite(ny)) {
+	const coords = resolveCoords(data)
+	if (!coords || !Number.isFinite(coords.nx) || !Number.isFinite(coords.ny)) {
 		return undefined
 	}
 
@@ -36,8 +53,8 @@ export function parseWsMessage(raw: unknown): WSContextType['message'] {
 		userId: data.userId,
 		type: data.type as WSContextType['type'],
 		color: data.color,
-		nx: Math.min(1, Math.max(0, nx)),
-		ny: Math.min(1, Math.max(0, ny)),
+		nx: clamp01(coords.nx),
+		ny: clamp01(coords.ny),
 	}
 }
 
@@ -52,11 +69,16 @@ export function buildWsPayload({
 	pos?: { nx: number; ny: number }
 	color: string
 }) {
-	return JSON.stringify({
+	const payload: Record<string, string | number> = {
 		userId,
 		type,
-		nx: pos?.nx,
-		ny: pos?.ny,
 		color,
-	})
+	}
+
+	if (pos && Number.isFinite(pos.nx) && Number.isFinite(pos.ny)) {
+		payload.nx = pos.nx
+		payload.ny = pos.ny
+	}
+
+	return JSON.stringify(payload)
 }

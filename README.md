@@ -99,6 +99,16 @@ Custom port:
 PORT=3004 npx chaospad-ws
 ```
 
+Disable relay logs:
+
+```bash
+CHAOSPAD_WS_LOG=0 npx chaospad-ws
+```
+
+**Two tabs on one machine:** both must connect to the same relay (`ws://localhost:3003`) and you should see `relayed to 1 client(s)` in server logs when the second tab is open.
+
+**Phone + laptop:** `localhost` on the phone is the phone itself. Use your computer's LAN IP: `ws://192.168.x.x:3003`.
+
 Point the client at it:
 
 ```tsx

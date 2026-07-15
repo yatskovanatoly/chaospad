@@ -55,7 +55,7 @@ const GlowEffect: React.FC<GlowEffectProps> = ({ containerRef }) => {
 	}, [isPointerActive, containerRef, throttledSpawn, glowIntervalMs])
 
 	useEffect(() => {
-		if (!message) return
+		if (!message || message.type === 'stop') return
 		const container = containerRef.current
 		if (!container) return
 		const { nx, ny, color, type } = message

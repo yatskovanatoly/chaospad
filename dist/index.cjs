@@ -444,7 +444,7 @@ var GlowEffect = ({ containerRef }) => {
     return () => window.clearInterval(id);
   }, [isPointerActive, containerRef, throttledSpawn, glowIntervalMs]);
   (0, import_react9.useEffect)(() => {
-    if (!message) return;
+    if (!message || message.type === "stop") return;
     const container = containerRef.current;
     if (!container) return;
     const { nx, ny, color: color2, type: type2 } = message;
@@ -548,28 +548,43 @@ var getUserId = () => {
 };
 
 // src/components/WsContext/helpers/wsMessage.ts
+var clamp01 = (n) => Math.min(1, Math.max(0, n));
+var resolveCoords = (data) => {
+  if (typeof data.nx === "number" && typeof data.ny === "number") {
+    return { nx: data.nx, ny: data.ny };
+  }
+  if (typeof data.x === "number" && typeof data.y === "number") {
+    return {
+      nx: data.x / window.innerWidth,
+      ny: data.y / window.innerHeight
+    };
+  }
+  return null;
+};
 function parseWsMessage(raw) {
   if (!raw || typeof raw !== "object") return void 0;
   const data = raw;
   if (!data.userId || !data.type || !data.color) return void 0;
-  let nx;
-  let ny;
-  if (typeof data.nx === "number" && typeof data.ny === "number") {
-    nx = data.nx;
-    ny = data.ny;
-  } else if (typeof data.x === "number" && typeof data.y === "number") {
-    nx = data.x / window.innerWidth;
-    ny = data.y / window.innerHeight;
+  if (data.type === "stop") {
+    const coords2 = resolveCoords(data);
+    return {
+      userId: data.userId,
+      type: "stop",
+      color: data.color,
+      nx: coords2 ? clamp01(coords2.nx) : 0,
+      ny: coords2 ? clamp01(coords2.ny) : 0
+    };
   }
-  if (nx == null || ny == null || !Number.isFinite(nx) || !Number.isFinite(ny)) {
+  const coords = resolveCoords(data);
+  if (!coords || !Number.isFinite(coords.nx) || !Number.isFinite(coords.ny)) {
     return void 0;
   }
   return {
     userId: data.userId,
     type: data.type,
     color: data.color,
-    nx: Math.min(1, Math.max(0, nx)),
-    ny: Math.min(1, Math.max(0, ny))
+    nx: clamp01(coords.nx),
+    ny: clamp01(coords.ny)
   };
 }
 function buildWsPayload({
@@ -578,13 +593,16 @@ function buildWsPayload({
   pos,
   color
 }) {
-  return JSON.stringify({
+  const payload = {
     userId,
     type,
-    nx: pos == null ? void 0 : pos.nx,
-    ny: pos == null ? void 0 : pos.ny,
     color
-  });
+  };
+  if (pos && Number.isFinite(pos.nx) && Number.isFinite(pos.ny)) {
+    payload.nx = pos.nx;
+    payload.ny = pos.ny;
+  }
+  return JSON.stringify(payload);
 }
 
 // src/components/WsContext/WsContextProvider.tsx
