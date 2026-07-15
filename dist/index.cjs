@@ -427,24 +427,26 @@ var GlowEffect = ({ containerRef }) => {
     () => throttledSpawn_default(glowIntervalMs, glowSize),
     [glowIntervalMs, glowSize]
   );
+  const isPointerActive = type !== "stop" && pos != null;
   (0, import_react9.useEffect)(() => {
-    const container = containerRef.current;
-    if (!container || !pos || type === "stop") return;
-    const { x, y } = toPixel(container, pos);
-    throttledSpawn(container, x, y, color, type);
-    const id = window.setInterval(() => {
+    if (!isPointerActive) return;
+    const tick = () => {
       const p = posRef.current;
       const t = typeRef.current;
       const c = colorRef.current;
-      if (!p || t === "stop" || !containerRef.current) return;
-      const pixel = toPixel(containerRef.current, p);
-      throttledSpawn(containerRef.current, pixel.x, pixel.y, c, t);
-    }, glowIntervalMs);
+      const container = containerRef.current;
+      if (!p || t === "stop" || !container) return;
+      const pixel = toPixel(container, p);
+      throttledSpawn(container, pixel.x, pixel.y, c, t);
+    };
+    tick();
+    const id = window.setInterval(tick, glowIntervalMs);
     return () => window.clearInterval(id);
-  }, [pos, type, color, containerRef, throttledSpawn, glowIntervalMs]);
+  }, [isPointerActive, containerRef, throttledSpawn, glowIntervalMs]);
   (0, import_react9.useEffect)(() => {
+    if (!message) return;
     const container = containerRef.current;
-    if (!container || !message) return;
+    if (!container) return;
     const { nx, ny, color: color2, type: type2 } = message;
     const { width, height } = container.getBoundingClientRect();
     throttledSpawn(container, nx * width, ny * height, color2, type2);
@@ -624,6 +626,7 @@ var CHAOSPAD_CSS = `
 	position: relative;
 	width: 100%;
 	height: 100%;
+	min-height: 100%;
 	overflow: hidden;
 	touch-action: none;
 	user-select: none;

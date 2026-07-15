@@ -33,26 +33,31 @@ const GlowEffect: React.FC<GlowEffectProps> = ({ containerRef }) => {
 		[glowIntervalMs, glowSize],
 	)
 
-	useEffect(() => {
-		const container = containerRef.current
-		if (!container || !pos || type === 'stop') return
+	const isPointerActive = type !== 'stop' && pos != null
 
-		const { x, y } = toPixel(container, pos)
-		throttledSpawn(container, x, y, color, type)
-		const id = window.setInterval(() => {
+	// Interval only while pointer is held — do not restart on every pos change.
+	useEffect(() => {
+		if (!isPointerActive) return
+
+		const tick = () => {
 			const p = posRef.current
 			const t = typeRef.current
 			const c = colorRef.current
-			if (!p || t === 'stop' || !containerRef.current) return
-			const pixel = toPixel(containerRef.current, p)
-			throttledSpawn(containerRef.current, pixel.x, pixel.y, c, t)
-		}, glowIntervalMs)
+			const container = containerRef.current
+			if (!p || t === 'stop' || !container) return
+			const pixel = toPixel(container, p)
+			throttledSpawn(container, pixel.x, pixel.y, c, t)
+		}
+
+		tick()
+		const id = window.setInterval(tick, glowIntervalMs)
 		return () => window.clearInterval(id)
-	}, [pos, type, color, containerRef, throttledSpawn, glowIntervalMs])
+	}, [isPointerActive, containerRef, throttledSpawn, glowIntervalMs])
 
 	useEffect(() => {
+		if (!message) return
 		const container = containerRef.current
-		if (!container || !message) return
+		if (!container) return
 		const { nx, ny, color, type } = message
 		const { width, height } = container.getBoundingClientRect()
 		throttledSpawn(container, nx * width, ny * height, color, type)
