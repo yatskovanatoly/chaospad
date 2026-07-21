@@ -564,6 +564,11 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
         e.stopPropagation();
       }
     };
+    const onDragStart = (e) => {
+      if (passThrough && sessionsRef.current.size > 0) {
+        e.preventDefault();
+      }
+    };
     const target = passThrough ? document : (_a = surfaceRef.current) != null ? _a : document;
     target.addEventListener("pointerdown", onPointerDown, PASSIVE_CAPTURE);
     target.addEventListener("pointermove", onPointerMove, ACTIVE_CAPTURE);
@@ -576,6 +581,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
     window.addEventListener("blur", endAllSessions);
     if (passThrough) {
       document.addEventListener("click", onClickCapture, true);
+      document.addEventListener("dragstart", onDragStart, ACTIVE_CAPTURE);
     }
     return () => {
       target.removeEventListener("pointerdown", onPointerDown, PASSIVE_CAPTURE);
@@ -588,6 +594,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       document.removeEventListener("visibilitychange", endAllSessions);
       window.removeEventListener("blur", endAllSessions);
       document.removeEventListener("click", onClickCapture, true);
+      document.removeEventListener("dragstart", onDragStart, ACTIVE_CAPTURE);
       sessionsRef.current.clear();
     };
   }, [passThrough, rootRef, surfaceRef]);

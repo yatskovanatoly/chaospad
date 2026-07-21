@@ -167,6 +167,12 @@ export function useGlobalPointerPad(
 			}
 		}
 
+		const onDragStart = (e: DragEvent) => {
+			if (passThrough && sessionsRef.current.size > 0) {
+				e.preventDefault()
+			}
+		}
+
 		const target: EventTarget = passThrough
 			? document
 			: (surfaceRef.current ?? document)
@@ -182,6 +188,7 @@ export function useGlobalPointerPad(
 		window.addEventListener('blur', endAllSessions)
 		if (passThrough) {
 			document.addEventListener('click', onClickCapture, true)
+			document.addEventListener('dragstart', onDragStart, ACTIVE_CAPTURE)
 		}
 
 		return () => {
@@ -195,6 +202,7 @@ export function useGlobalPointerPad(
 			document.removeEventListener('visibilitychange', endAllSessions)
 			window.removeEventListener('blur', endAllSessions)
 			document.removeEventListener('click', onClickCapture, true)
+			document.removeEventListener('dragstart', onDragStart, ACTIVE_CAPTURE)
 			sessionsRef.current.clear()
 		}
 	}, [passThrough, rootRef, surfaceRef])
