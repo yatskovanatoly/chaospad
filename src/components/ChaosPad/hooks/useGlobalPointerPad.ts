@@ -1,3 +1,4 @@
+import { useChaospadConfig } from '@/context/ChaospadConfigContext'
 import useWebSocket from '@/components/WsContext/useWebSocket'
 import type { MotionType } from '@/components/WsContext/WsContextProvider'
 import type { Position } from '@/type'
@@ -23,13 +24,21 @@ export function useGlobalPointerPad(
 	passThrough: boolean,
 ) {
 	const { emitMotion } = useWebSocket()
+	const { glowIntervalMs } = useChaospadConfig()
 	const emitMotionRef = useRef(emitMotion)
 	const sessionsRef = useRef(new Map<number, PointerSession>())
 	const suppressClickUntilRef = useRef(0)
+	const holdIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
 	emitMotionRef.current = emitMotion
 
 	useEffect(() => {
+		const stopHoldHeartbeat = () => {
+			if (holdIntervalRef.current == null) return
+			clearInterval(holdIntervalRef.current)
+			holdIntervalRef.current = null
+		}
+
 		const emit = (clientX: number, clientY: number, type: MotionType) => {
 			const rect = rootRef.current?.getBoundingClientRect()
 			if (!rect || rect.width === 0 || rect.height === 0) return
@@ -38,6 +47,17 @@ export function useGlobalPointerPad(
 				ny: (clientY - rect.top) / rect.height,
 			}
 			emitMotionRef.current(pos, type)
+		}
+
+		const emitHoldMove = () => {
+			const session = sessionsRef.current.values().next().value
+			if (!session) return
+			emit(session.lastX, session.lastY, 'move')
+		}
+
+		const startHoldHeartbeat = () => {
+			if (holdIntervalRef.current != null) return
+			holdIntervalRef.current = setInterval(emitHoldMove, glowIntervalMs)
 		}
 
 		const endSession = (
@@ -51,6 +71,7 @@ export function useGlobalPointerPad(
 
 			sessionsRef.current.delete(pointerId)
 			emit(clientX, clientY, 'stop')
+			if (sessionsRef.current.size === 0) stopHoldHeartbeat()
 
 			if (passThrough && session.isDrag) {
 				suppressClickUntilRef.current = Date.now() + CLICK_SUPPRESS_MS
@@ -68,6 +89,7 @@ export function useGlobalPointerPad(
 				}
 			}
 			sessionsRef.current.clear()
+			stopHoldHeartbeat()
 		}
 
 		const onPointerDown = (e: PointerEvent) => {
@@ -90,6 +112,7 @@ export function useGlobalPointerPad(
 			}
 
 			emit(e.clientX, e.clientY, 'start')
+			startHoldHeartbeat()
 		}
 
 		const onPointerMove = (e: PointerEvent) => {
@@ -204,6 +227,7 @@ export function useGlobalPointerPad(
 			document.removeEventListener('click', onClickCapture, true)
 			document.removeEventListener('dragstart', onDragStart, ACTIVE_CAPTURE)
 			sessionsRef.current.clear()
+			stopHoldHeartbeat()
 		}
-	}, [passThrough, rootRef, surfaceRef])
+	}, [passThrough, rootRef, surfaceRef, glowIntervalMs])
 }

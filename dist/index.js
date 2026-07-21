@@ -449,12 +449,19 @@ var PASSIVE_CAPTURE = { capture: true, passive: true };
 var ACTIVE_CAPTURE = { capture: true, passive: false };
 function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
   const { emitMotion } = useWebSocket_default();
+  const { glowIntervalMs } = useChaospadConfig();
   const emitMotionRef = useRef3(emitMotion);
   const sessionsRef = useRef3(/* @__PURE__ */ new Map());
   const suppressClickUntilRef = useRef3(0);
+  const holdIntervalRef = useRef3(null);
   emitMotionRef.current = emitMotion;
   useEffect6(() => {
     var _a;
+    const stopHoldHeartbeat = () => {
+      if (holdIntervalRef.current == null) return;
+      clearInterval(holdIntervalRef.current);
+      holdIntervalRef.current = null;
+    };
     const emit = (clientX, clientY, type) => {
       var _a2;
       const rect = (_a2 = rootRef.current) == null ? void 0 : _a2.getBoundingClientRect();
@@ -465,11 +472,21 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       };
       emitMotionRef.current(pos, type);
     };
+    const emitHoldMove = () => {
+      const session = sessionsRef.current.values().next().value;
+      if (!session) return;
+      emit(session.lastX, session.lastY, "move");
+    };
+    const startHoldHeartbeat = () => {
+      if (holdIntervalRef.current != null) return;
+      holdIntervalRef.current = setInterval(emitHoldMove, glowIntervalMs);
+    };
     const endSession = (pointerId, clientX, clientY, event) => {
       const session = sessionsRef.current.get(pointerId);
       if (!session) return;
       sessionsRef.current.delete(pointerId);
       emit(clientX, clientY, "stop");
+      if (sessionsRef.current.size === 0) stopHoldHeartbeat();
       if (passThrough && session.isDrag) {
         suppressClickUntilRef.current = Date.now() + CLICK_SUPPRESS_MS;
         event == null ? void 0 : event.preventDefault();
@@ -485,6 +502,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
         }
       }
       sessionsRef.current.clear();
+      stopHoldHeartbeat();
     };
     const onPointerDown = (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
@@ -503,6 +521,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
         }
       }
       emit(e.clientX, e.clientY, "start");
+      startHoldHeartbeat();
     };
     const onPointerMove = (e) => {
       const session = sessionsRef.current.get(e.pointerId);
@@ -596,8 +615,9 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       document.removeEventListener("click", onClickCapture, true);
       document.removeEventListener("dragstart", onDragStart, ACTIVE_CAPTURE);
       sessionsRef.current.clear();
+      stopHoldHeartbeat();
     };
-  }, [passThrough, rootRef, surfaceRef]);
+  }, [passThrough, rootRef, surfaceRef, glowIntervalMs]);
 }
 
 // src/components/ChaosPad/helpers/spawnGlow.ts
