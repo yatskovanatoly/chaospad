@@ -1,6 +1,6 @@
 import { unlockAudioContext } from '@/components/AudioEngineContext/helpers/unlockAudioContext'
 import { useAudioEngine } from '@/components/AudioEngineContext/useAudioEngine'
-import { useEffect } from 'react'
+import { useLayoutEffect } from 'react'
 
 const UNLOCK_OPTS = { capture: true, passive: true } as const
 
@@ -8,7 +8,7 @@ const UNLOCK_OPTS = { capture: true, passive: true } as const
 export function useAudioUnlock() {
 	const engine = useAudioEngine()
 
-	useEffect(() => {
+	useLayoutEffect(() => {
 		const unlock = () => {
 			unlockAudioContext(engine.ctx)
 		}

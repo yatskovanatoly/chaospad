@@ -254,15 +254,12 @@ import { jsx as jsx2 } from "react/jsx-runtime";
 function AudioEngineProvider({
   children
 }) {
-  const [engine, setEngine] = useState2(null);
+  const [engine] = useState2(() => new AudioEngine());
   useEffect2(() => {
-    const _engine = new AudioEngine();
-    setEngine(_engine);
     return () => {
-      _engine.ctx.close();
+      void engine.ctx.close();
     };
-  }, []);
-  if (!engine) return null;
+  }, [engine]);
   return /* @__PURE__ */ jsx2(AudioEngineContext.Provider, { value: engine, children });
 }
 
@@ -279,16 +276,19 @@ function useAudioEngine() {
 // src/components/AudioEngineContext/helpers/unlockAudioContext.ts
 function unlockAudioContext(ctx) {
   if (ctx.state === "running") return;
-  const buffer = ctx.createBuffer(1, 1, 22050);
-  const source = ctx.createBufferSource();
-  source.buffer = buffer;
-  source.connect(ctx.destination);
-  source.start(0);
   void ctx.resume();
+  try {
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
+  } catch (e) {
+  }
 }
 
 // src/components/ChaosPad/hooks/useChaosAudio.ts
-import { useCallback, useEffect as useEffect3, useRef } from "react";
+import { useCallback, useEffect as useEffect3, useLayoutEffect, useRef } from "react";
 
 // src/components/WsContext/useWebSocket.ts
 import { useContext as useContext3 } from "react";
@@ -332,8 +332,11 @@ function useChaosAudio() {
         voiceRef.current = voice;
         isActiveRef.current = true;
       };
-      unlockAudioContext(engine.ctx);
-      run();
+      try {
+        unlockAudioContext(engine.ctx);
+      } finally {
+        run();
+      }
     },
     [engine, quantize, reverbLevel, volume]
   );
@@ -345,7 +348,7 @@ function useChaosAudio() {
     }
     isActiveRef.current = false;
   }, [release]);
-  useEffect3(() => {
+  useLayoutEffect(() => {
     return subscribeMotion(({ pos, type }) => {
       var _a;
       if (type === "start" && pos) {
@@ -428,11 +431,11 @@ function useChaosWebSocket() {
 }
 
 // src/components/ChaosPad/hooks/useAudioUnlock.ts
-import { useEffect as useEffect5 } from "react";
+import { useLayoutEffect as useLayoutEffect2 } from "react";
 var UNLOCK_OPTS = { capture: true, passive: true };
 function useAudioUnlock() {
   const engine = useAudioEngine();
-  useEffect5(() => {
+  useLayoutEffect2(() => {
     const unlock = () => {
       unlockAudioContext(engine.ctx);
     };
@@ -448,20 +451,23 @@ function useAudioUnlock() {
 }
 
 // src/components/ChaosPad/hooks/useGlobalPointerPad.ts
-import { useEffect as useEffect6, useRef as useRef3 } from "react";
+import { useLayoutEffect as useLayoutEffect3, useRef as useRef3 } from "react";
 var DRAG_THRESHOLD_PX = 10;
 var CLICK_SUPPRESS_MS = 400;
 var PASSIVE_CAPTURE = { capture: true, passive: true };
 var ACTIVE_CAPTURE = { capture: true, passive: false };
 function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
   const { emitMotion } = useWebSocket_default();
+  const engine = useAudioEngine();
   const { glowIntervalMs } = useChaospadConfig();
   const emitMotionRef = useRef3(emitMotion);
+  const engineRef = useRef3(engine);
   const sessionsRef = useRef3(/* @__PURE__ */ new Map());
   const suppressClickUntilRef = useRef3(0);
   const holdIntervalRef = useRef3(null);
   emitMotionRef.current = emitMotion;
-  useEffect6(() => {
+  engineRef.current = engine;
+  useLayoutEffect3(() => {
     var _a;
     const stopHoldHeartbeat = () => {
       if (holdIntervalRef.current == null) return;
@@ -510,8 +516,15 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       sessionsRef.current.clear();
       stopHoldHeartbeat();
     };
+    const unlockAudio = () => {
+      unlockAudioContext(engineRef.current.ctx);
+    };
+    const onTouchStart = () => {
+      unlockAudio();
+    };
     const onPointerDown = (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
+      unlockAudio();
       sessionsRef.current.set(e.pointerId, {
         startX: e.clientX,
         startY: e.clientY,
@@ -595,6 +608,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       }
     };
     const target = passThrough ? document : (_a = surfaceRef.current) != null ? _a : document;
+    document.addEventListener("touchstart", onTouchStart, PASSIVE_CAPTURE);
     target.addEventListener("pointerdown", onPointerDown, PASSIVE_CAPTURE);
     target.addEventListener("pointermove", onPointerMove, ACTIVE_CAPTURE);
     target.addEventListener("pointerup", onPointerUp, PASSIVE_CAPTURE);
@@ -609,6 +623,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       document.addEventListener("dragstart", onDragStart, ACTIVE_CAPTURE);
     }
     return () => {
+      document.removeEventListener("touchstart", onTouchStart, PASSIVE_CAPTURE);
       target.removeEventListener("pointerdown", onPointerDown, PASSIVE_CAPTURE);
       target.removeEventListener("pointermove", onPointerMove, ACTIVE_CAPTURE);
       target.removeEventListener("pointerup", onPointerUp, PASSIVE_CAPTURE);
@@ -657,7 +672,7 @@ var createThrottledSpawn = (intervalMs, glowSize) => {
 var throttledSpawn_default = createThrottledSpawn;
 
 // src/components/ChaosPad/GlowFx.tsx
-import { useEffect as useEffect7, useMemo, useRef as useRef4 } from "react";
+import { useEffect as useEffect5, useMemo, useRef as useRef4 } from "react";
 var toPixel = (container, pos) => {
   const { width, height } = container.getBoundingClientRect();
   return {
@@ -680,7 +695,7 @@ var GlowEffect = ({ containerRef }) => {
     [glowIntervalMs, glowSize]
   );
   const isPointerActive = type !== "stop" && pos != null;
-  useEffect7(() => {
+  useEffect5(() => {
     if (!isPointerActive) return;
     const tick = () => {
       const p = posRef.current;
@@ -695,7 +710,7 @@ var GlowEffect = ({ containerRef }) => {
     const id = window.setInterval(tick, glowIntervalMs);
     return () => window.clearInterval(id);
   }, [isPointerActive, containerRef, throttledSpawn, glowIntervalMs]);
-  useEffect7(() => {
+  useEffect5(() => {
     if (!message || message.type === "stop") return;
     const container = containerRef.current;
     if (!container) return;
@@ -817,7 +832,7 @@ function buildWsPayload({
 }
 
 // src/components/WsContext/WsContextProvider.tsx
-import { useCallback as useCallback2, useEffect as useEffect8, useRef as useRef6, useState as useState3 } from "react";
+import { useCallback as useCallback2, useEffect as useEffect6, useRef as useRef6, useState as useState3 } from "react";
 import { jsx as jsx4 } from "react/jsx-runtime";
 var RECONNECT_MS = 1500;
 var WebSocketProvider = ({ children }) => {
@@ -874,7 +889,7 @@ var WebSocketProvider = ({ children }) => {
       motionListenersRef.current.delete(listener);
     };
   }, []);
-  useEffect8(() => {
+  useEffect6(() => {
     let alive = true;
     let reconnectTimer;
     let ws = null;
@@ -1014,10 +1029,10 @@ function injectChaospadStyles() {
 }
 
 // src/Chaospad.tsx
-import { useEffect as useEffect9 } from "react";
+import { useEffect as useEffect7 } from "react";
 import { jsx as jsx5 } from "react/jsx-runtime";
 function Chaospad({ config, className, style }) {
-  useEffect9(() => {
+  useEffect7(() => {
     injectChaospadStyles();
   }, []);
   return /* @__PURE__ */ jsx5(ChaospadConfigProvider, { config, children: /* @__PURE__ */ jsx5(WsContextProvider_default, { children: /* @__PURE__ */ jsx5(AudioEngineProvider, { children: /* @__PURE__ */ jsx5(ChaosPad, { className, style }) }) }) });

@@ -9,18 +9,13 @@ export default function AudioEngineProvider({
 }: {
 	children: React.ReactNode
 }) {
-	const [engine, setEngine] = useState<AudioEngine | null>(null)
+	const [engine] = useState(() => new AudioEngine())
 
 	useEffect(() => {
-		const _engine = new AudioEngine()
-		setEngine(_engine)
-
 		return () => {
-			_engine.ctx.close()
+			void engine.ctx.close()
 		}
-	}, [])
-
-	if (!engine) return null
+	}, [engine])
 
 	return (
 		<AudioEngineContext.Provider value={engine}>

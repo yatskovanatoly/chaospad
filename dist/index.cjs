@@ -279,15 +279,12 @@ var import_jsx_runtime2 = require("react/jsx-runtime");
 function AudioEngineProvider({
   children
 }) {
-  const [engine, setEngine] = (0, import_react3.useState)(null);
+  const [engine] = (0, import_react3.useState)(() => new AudioEngine());
   (0, import_react3.useEffect)(() => {
-    const _engine = new AudioEngine();
-    setEngine(_engine);
     return () => {
-      _engine.ctx.close();
+      void engine.ctx.close();
     };
-  }, []);
-  if (!engine) return null;
+  }, [engine]);
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(AudioEngineContext.Provider, { value: engine, children });
 }
 
@@ -304,12 +301,15 @@ function useAudioEngine() {
 // src/components/AudioEngineContext/helpers/unlockAudioContext.ts
 function unlockAudioContext(ctx) {
   if (ctx.state === "running") return;
-  const buffer = ctx.createBuffer(1, 1, 22050);
-  const source = ctx.createBufferSource();
-  source.buffer = buffer;
-  source.connect(ctx.destination);
-  source.start(0);
   void ctx.resume();
+  try {
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
+  } catch (e) {
+  }
 }
 
 // src/components/ChaosPad/hooks/useChaosAudio.ts
@@ -357,8 +357,11 @@ function useChaosAudio() {
         voiceRef.current = voice;
         isActiveRef.current = true;
       };
-      unlockAudioContext(engine.ctx);
-      run();
+      try {
+        unlockAudioContext(engine.ctx);
+      } finally {
+        run();
+      }
     },
     [engine, quantize, reverbLevel, volume]
   );
@@ -370,7 +373,7 @@ function useChaosAudio() {
     }
     isActiveRef.current = false;
   }, [release]);
-  (0, import_react7.useEffect)(() => {
+  (0, import_react7.useLayoutEffect)(() => {
     return subscribeMotion(({ pos, type }) => {
       var _a;
       if (type === "start" && pos) {
@@ -457,7 +460,7 @@ var import_react9 = require("react");
 var UNLOCK_OPTS = { capture: true, passive: true };
 function useAudioUnlock() {
   const engine = useAudioEngine();
-  (0, import_react9.useEffect)(() => {
+  (0, import_react9.useLayoutEffect)(() => {
     const unlock = () => {
       unlockAudioContext(engine.ctx);
     };
@@ -480,13 +483,16 @@ var PASSIVE_CAPTURE = { capture: true, passive: true };
 var ACTIVE_CAPTURE = { capture: true, passive: false };
 function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
   const { emitMotion } = useWebSocket_default();
+  const engine = useAudioEngine();
   const { glowIntervalMs } = useChaospadConfig();
   const emitMotionRef = (0, import_react10.useRef)(emitMotion);
+  const engineRef = (0, import_react10.useRef)(engine);
   const sessionsRef = (0, import_react10.useRef)(/* @__PURE__ */ new Map());
   const suppressClickUntilRef = (0, import_react10.useRef)(0);
   const holdIntervalRef = (0, import_react10.useRef)(null);
   emitMotionRef.current = emitMotion;
-  (0, import_react10.useEffect)(() => {
+  engineRef.current = engine;
+  (0, import_react10.useLayoutEffect)(() => {
     var _a;
     const stopHoldHeartbeat = () => {
       if (holdIntervalRef.current == null) return;
@@ -535,8 +541,15 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       sessionsRef.current.clear();
       stopHoldHeartbeat();
     };
+    const unlockAudio = () => {
+      unlockAudioContext(engineRef.current.ctx);
+    };
+    const onTouchStart = () => {
+      unlockAudio();
+    };
     const onPointerDown = (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
+      unlockAudio();
       sessionsRef.current.set(e.pointerId, {
         startX: e.clientX,
         startY: e.clientY,
@@ -620,6 +633,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       }
     };
     const target = passThrough ? document : (_a = surfaceRef.current) != null ? _a : document;
+    document.addEventListener("touchstart", onTouchStart, PASSIVE_CAPTURE);
     target.addEventListener("pointerdown", onPointerDown, PASSIVE_CAPTURE);
     target.addEventListener("pointermove", onPointerMove, ACTIVE_CAPTURE);
     target.addEventListener("pointerup", onPointerUp, PASSIVE_CAPTURE);
@@ -634,6 +648,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       document.addEventListener("dragstart", onDragStart, ACTIVE_CAPTURE);
     }
     return () => {
+      document.removeEventListener("touchstart", onTouchStart, PASSIVE_CAPTURE);
       target.removeEventListener("pointerdown", onPointerDown, PASSIVE_CAPTURE);
       target.removeEventListener("pointermove", onPointerMove, ACTIVE_CAPTURE);
       target.removeEventListener("pointerup", onPointerUp, PASSIVE_CAPTURE);
