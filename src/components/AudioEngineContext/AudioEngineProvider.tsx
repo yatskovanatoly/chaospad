@@ -13,7 +13,7 @@ export default function AudioEngineProvider({
 
 	useEffect(() => {
 		return () => {
-			void engine.ctx.close()
+			engine.close()
 		}
 	}, [engine])
 

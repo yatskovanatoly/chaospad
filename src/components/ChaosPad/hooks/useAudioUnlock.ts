@@ -1,4 +1,3 @@
-import { unlockAudioContext } from '@/components/AudioEngineContext/helpers/unlockAudioContext'
 import { useAudioEngine } from '@/components/AudioEngineContext/useAudioEngine'
 import { useLayoutEffect } from 'react'
 
@@ -10,17 +9,27 @@ export function useAudioUnlock() {
 
 	useLayoutEffect(() => {
 		const unlock = () => {
-			unlockAudioContext(engine.ctx)
+			engine.unlock()
+		}
+
+		const onVisible = () => {
+			if (document.visibilityState === 'visible') unlock()
 		}
 
 		document.addEventListener('touchstart', unlock, UNLOCK_OPTS)
+		document.addEventListener('touchend', unlock, UNLOCK_OPTS)
 		document.addEventListener('pointerdown', unlock, UNLOCK_OPTS)
+		document.addEventListener('pointerup', unlock, UNLOCK_OPTS)
 		document.addEventListener('click', unlock, UNLOCK_OPTS)
+		document.addEventListener('visibilitychange', onVisible)
 
 		return () => {
 			document.removeEventListener('touchstart', unlock, UNLOCK_OPTS)
+			document.removeEventListener('touchend', unlock, UNLOCK_OPTS)
 			document.removeEventListener('pointerdown', unlock, UNLOCK_OPTS)
+			document.removeEventListener('pointerup', unlock, UNLOCK_OPTS)
 			document.removeEventListener('click', unlock, UNLOCK_OPTS)
+			document.removeEventListener('visibilitychange', onVisible)
 		}
 	}, [engine])
 }

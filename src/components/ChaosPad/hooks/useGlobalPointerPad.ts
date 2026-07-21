@@ -1,4 +1,3 @@
-import { unlockAudioContext } from '@/components/AudioEngineContext/helpers/unlockAudioContext'
 import { useAudioEngine } from '@/components/AudioEngineContext/useAudioEngine'
 import { useChaospadConfig } from '@/context/ChaospadConfigContext'
 import useWebSocket from '@/components/WsContext/useWebSocket'
@@ -57,6 +56,7 @@ export function useGlobalPointerPad(
 		const emitHoldMove = () => {
 			const session = sessionsRef.current.values().next().value
 			if (!session) return
+			unlockAudio()
 			emit(session.lastX, session.lastY, 'move')
 		}
 
@@ -98,7 +98,7 @@ export function useGlobalPointerPad(
 		}
 
 		const unlockAudio = () => {
-			unlockAudioContext(engineRef.current.ctx)
+			engineRef.current.unlock()
 		}
 
 		const onTouchStart = () => {
@@ -153,6 +153,7 @@ export function useGlobalPointerPad(
 
 		const onPointerUp = (e: PointerEvent) => {
 			if (e.pointerType === 'mouse' && e.button !== 0) return
+			unlockAudio()
 			endSession(e.pointerId, e.clientX, e.clientY, e)
 		}
 
@@ -162,6 +163,8 @@ export function useGlobalPointerPad(
 
 		const onTouchMove = (e: TouchEvent) => {
 			if (sessionsRef.current.size === 0) return
+
+			unlockAudio()
 
 			const touch = e.touches[0]
 			if (!touch) return
@@ -188,6 +191,7 @@ export function useGlobalPointerPad(
 		}
 
 		const onTouchEnd = (e: TouchEvent) => {
+			unlockAudio()
 			if (sessionsRef.current.size === 0) return
 			if (e.touches.length > 0) return
 			endAllSessions(e)
@@ -216,12 +220,12 @@ export function useGlobalPointerPad(
 			: (surfaceRef.current ?? document)
 
 		document.addEventListener('touchstart', onTouchStart, PASSIVE_CAPTURE)
+		document.addEventListener('touchend', onTouchEnd, PASSIVE_CAPTURE)
 		target.addEventListener('pointerdown', onPointerDown, PASSIVE_CAPTURE)
 		target.addEventListener('pointermove', onPointerMove, ACTIVE_CAPTURE)
 		target.addEventListener('pointerup', onPointerUp, PASSIVE_CAPTURE)
 		target.addEventListener('pointercancel', onPointerCancel, PASSIVE_CAPTURE)
 		document.addEventListener('touchmove', onTouchMove, ACTIVE_CAPTURE)
-		document.addEventListener('touchend', onTouchEnd, PASSIVE_CAPTURE)
 		document.addEventListener('touchcancel', onTouchCancel, PASSIVE_CAPTURE)
 		document.addEventListener('visibilitychange', endAllSessions)
 		window.addEventListener('blur', endAllSessions)
@@ -232,6 +236,7 @@ export function useGlobalPointerPad(
 
 		return () => {
 			document.removeEventListener('touchstart', onTouchStart, PASSIVE_CAPTURE)
+			document.removeEventListener('touchend', onTouchEnd, PASSIVE_CAPTURE)
 			target.removeEventListener('pointerdown', onPointerDown, PASSIVE_CAPTURE)
 			target.removeEventListener('pointermove', onPointerMove, ACTIVE_CAPTURE)
 			target.removeEventListener('pointerup', onPointerUp, PASSIVE_CAPTURE)

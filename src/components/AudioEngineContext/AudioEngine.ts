@@ -1,4 +1,5 @@
 import { createImpulseResponse } from './helpers/createImpulseResponse'
+import { createAudioContext, unlockAudioForGesture } from './helpers/unlockAudioContext'
 import { getSoundParamsFromXY } from './helpers/getSoundParams'
 import { quantizeFreq, type QuantizeMode } from './helpers/quantizeFreq'
 import { updateSoundFromPosition } from './helpers/updateSoundFromPosition'
@@ -6,33 +7,86 @@ import { updateSoundFromPosition } from './helpers/updateSoundFromPosition'
 const ATTACK_S = 0.1
 
 export class AudioEngine {
-	readonly ctx: AudioContext
-	readonly convolver: ConvolverNode
-	readonly convolverGain: GainNode
-	readonly masterGain: GainNode
+	private ctx: AudioContext | null = null
+	private masterGain: GainNode | null = null
+	private convolver: ConvolverNode | null = null
+	private convolverGain: GainNode | null = null
+	private graphReady = false
+	private volumeValue = 1
+	private reverbLevelValue = 0.5
 
-	constructor() {
-		this.ctx = new AudioContext()
-		const impulse = createImpulseResponse(this.ctx)
-		this.convolver = this.ctx.createConvolver()
-		this.convolver.buffer = impulse
-		this.convolverGain = this.ctx.createGain()
-		this.masterGain = this.ctx.createGain()
-		this.convolver.connect(this.convolverGain)
-		this.convolverGain.connect(this.masterGain)
-		this.masterGain.connect(this.ctx.destination)
+	/** Create/resume AudioContext inside a user-gesture handler (required on iOS). */
+	unlock(): AudioContext {
+		if (!this.ctx) {
+			this.ctx = createAudioContext()
+		}
+		if (!this.graphReady) {
+			this.initGraph()
+			this.graphReady = true
+		}
+		unlockAudioForGesture(this.ctx)
+		return this.ctx
+	}
+
+	close() {
+		if (!this.ctx) return
+		void this.ctx.close()
+		this.ctx = null
+		this.masterGain = null
+		this.convolver = null
+		this.convolverGain = null
+		this.graphReady = false
+	}
+
+	private initGraph() {
+		const ctx = this.ctx!
+		this.masterGain = ctx.createGain()
+		this.masterGain.gain.value = this.volumeValue
+		this.masterGain.connect(ctx.destination)
+
+		try {
+			const impulse = createImpulseResponse(ctx)
+			this.convolver = ctx.createConvolver()
+			this.convolver.buffer = impulse
+			this.convolverGain = ctx.createGain()
+			this.convolverGain.gain.value = this.reverbLevelValue
+			this.convolver.connect(this.convolverGain)
+			this.convolverGain.connect(this.masterGain)
+		} catch {
+			this.convolver = null
+			this.convolverGain = null
+		}
+	}
+
+	private getContext(): AudioContext {
+		if (!this.ctx || !this.masterGain) {
+			throw new Error('AudioEngine.unlock() must be called before playback')
+		}
+		return this.ctx
 	}
 
 	setVolume(v: number) {
-		this.masterGain.gain.value = v
+		this.volumeValue = v
+		if (this.masterGain) this.masterGain.gain.value = v
 	}
 
 	setReverbLevel(v: number) {
-		this.convolverGain.gain.value = v
+		this.reverbLevelValue = v
+		if (this.convolverGain) this.convolverGain.gain.value = v
 	}
 
 	createVoice(position: { nx: number; ny: number }, quantize: QuantizeMode = 'none') {
+		this.unlock()
 		return new Voice(this, position, quantize)
+	}
+
+	connectVoiceOutput(gain: GainNode) {
+		gain.connect(this.masterGain!)
+		if (this.convolver) gain.connect(this.convolver)
+	}
+
+	getContextForVoice() {
+		return this.getContext()
 	}
 }
 
@@ -46,7 +100,7 @@ export class Voice {
 	constructor(engine: AudioEngine, position: { nx: number; ny: number }, quantize: QuantizeMode = 'none') {
 		this.engine = engine
 		this.quantize = quantize
-		const ctx = engine.ctx
+		const ctx = engine.getContextForVoice()
 
 		this.oscillator = ctx.createOscillator()
 		this.gain = ctx.createGain()
@@ -59,16 +113,15 @@ export class Voice {
 		this.gain.gain.setValueAtTime(0, now)
 		this.gain.gain.linearRampToValueAtTime(target, now + ATTACK_S)
 		this.oscillator.connect(this.gain)
-		this.gain.connect(engine.masterGain)
-		this.gain.connect(engine.convolver)
-		this.oscillator.start(now)
+		engine.connectVoiceOutput(this.gain)
+		this.oscillator.start(now + 0.001)
 	}
 
 	updatePosition(nx: number, ny: number) {
 		updateSoundFromPosition(
 			nx,
 			ny,
-			this.engine.ctx,
+			this.engine.getContextForVoice(),
 			this.oscillator,
 			this.gain,
 			this.quantize
@@ -76,7 +129,7 @@ export class Voice {
 	}
 
 	stop(releaseSeconds: number) {
-		const ctx = this.engine.ctx
+		const ctx = this.engine.getContextForVoice()
 		const now = ctx.currentTime
 		const g = this.gain.gain
 		g.cancelScheduledValues(now)
@@ -90,4 +143,3 @@ export class Voice {
 		}, releaseSeconds * 1000 + 100)
 	}
 }
-

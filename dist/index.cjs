@@ -156,6 +156,60 @@ var createImpulseResponse = (ctx, duration = 2, decay = 2) => {
   return impulse;
 };
 
+// src/components/AudioEngineContext/helpers/unlockAudioContext.ts
+var SILENT_WAV = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+var silentAudio = null;
+function createAudioContext() {
+  var _a;
+  const w = window;
+  const AC = (_a = window.AudioContext) != null ? _a : w.webkitAudioContext;
+  if (!AC) throw new Error("Web Audio API unavailable");
+  return new AC();
+}
+function setPlaybackAudioSession() {
+  const nav = navigator;
+  if (!nav.audioSession) return;
+  try {
+    nav.audioSession.type = "playback";
+  } catch (e) {
+  }
+}
+function primeDisposableContext() {
+  try {
+    const temp = createAudioContext();
+    void temp.resume().finally(() => {
+      void temp.close();
+    });
+  } catch (e) {
+  }
+}
+function playSilentHtmlAudio() {
+  if (typeof Audio === "undefined") return;
+  if (!silentAudio) {
+    silentAudio = new Audio(SILENT_WAV);
+    silentAudio.preload = "auto";
+    silentAudio.volume = 1e-3;
+  }
+  silentAudio.currentTime = 0;
+  void silentAudio.play().catch(() => {
+  });
+}
+function unlockAudioForGesture(ctx) {
+  setPlaybackAudioSession();
+  primeDisposableContext();
+  playSilentHtmlAudio();
+  if (!ctx) return;
+  void ctx.resume();
+  try {
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
+  } catch (e) {
+  }
+}
+
 // src/components/AudioEngineContext/helpers/getSoundParams.ts
 var getSoundParamsFromXY = (nx, ny) => {
   const minFreq = 256;
@@ -201,31 +255,84 @@ var updateSoundFromPosition = (clientX, clientY, ctx, osc, gain, quantize = "non
 var ATTACK_S = 0.1;
 var AudioEngine = class {
   constructor() {
-    this.ctx = new AudioContext();
-    const impulse = createImpulseResponse(this.ctx);
-    this.convolver = this.ctx.createConvolver();
-    this.convolver.buffer = impulse;
-    this.convolverGain = this.ctx.createGain();
-    this.masterGain = this.ctx.createGain();
-    this.convolver.connect(this.convolverGain);
-    this.convolverGain.connect(this.masterGain);
-    this.masterGain.connect(this.ctx.destination);
+    this.ctx = null;
+    this.masterGain = null;
+    this.convolver = null;
+    this.convolverGain = null;
+    this.graphReady = false;
+    this.volumeValue = 1;
+    this.reverbLevelValue = 0.5;
+  }
+  /** Create/resume AudioContext inside a user-gesture handler (required on iOS). */
+  unlock() {
+    if (!this.ctx) {
+      this.ctx = createAudioContext();
+    }
+    if (!this.graphReady) {
+      this.initGraph();
+      this.graphReady = true;
+    }
+    unlockAudioForGesture(this.ctx);
+    return this.ctx;
+  }
+  close() {
+    if (!this.ctx) return;
+    void this.ctx.close();
+    this.ctx = null;
+    this.masterGain = null;
+    this.convolver = null;
+    this.convolverGain = null;
+    this.graphReady = false;
+  }
+  initGraph() {
+    const ctx = this.ctx;
+    this.masterGain = ctx.createGain();
+    this.masterGain.gain.value = this.volumeValue;
+    this.masterGain.connect(ctx.destination);
+    try {
+      const impulse = createImpulseResponse(ctx);
+      this.convolver = ctx.createConvolver();
+      this.convolver.buffer = impulse;
+      this.convolverGain = ctx.createGain();
+      this.convolverGain.gain.value = this.reverbLevelValue;
+      this.convolver.connect(this.convolverGain);
+      this.convolverGain.connect(this.masterGain);
+    } catch (e) {
+      this.convolver = null;
+      this.convolverGain = null;
+    }
+  }
+  getContext() {
+    if (!this.ctx || !this.masterGain) {
+      throw new Error("AudioEngine.unlock() must be called before playback");
+    }
+    return this.ctx;
   }
   setVolume(v) {
-    this.masterGain.gain.value = v;
+    this.volumeValue = v;
+    if (this.masterGain) this.masterGain.gain.value = v;
   }
   setReverbLevel(v) {
-    this.convolverGain.gain.value = v;
+    this.reverbLevelValue = v;
+    if (this.convolverGain) this.convolverGain.gain.value = v;
   }
   createVoice(position, quantize = "none") {
+    this.unlock();
     return new Voice(this, position, quantize);
+  }
+  connectVoiceOutput(gain) {
+    gain.connect(this.masterGain);
+    if (this.convolver) gain.connect(this.convolver);
+  }
+  getContextForVoice() {
+    return this.getContext();
   }
 };
 var Voice = class {
   constructor(engine, position, quantize = "none") {
     this.engine = engine;
     this.quantize = quantize;
-    const ctx = engine.ctx;
+    const ctx = engine.getContextForVoice();
     this.oscillator = ctx.createOscillator();
     this.gain = ctx.createGain();
     this.oscillator.type = "sine";
@@ -237,22 +344,21 @@ var Voice = class {
     this.gain.gain.setValueAtTime(0, now);
     this.gain.gain.linearRampToValueAtTime(target, now + ATTACK_S);
     this.oscillator.connect(this.gain);
-    this.gain.connect(engine.masterGain);
-    this.gain.connect(engine.convolver);
-    this.oscillator.start(now);
+    engine.connectVoiceOutput(this.gain);
+    this.oscillator.start(now + 1e-3);
   }
   updatePosition(nx, ny) {
     updateSoundFromPosition(
       nx,
       ny,
-      this.engine.ctx,
+      this.engine.getContextForVoice(),
       this.oscillator,
       this.gain,
       this.quantize
     );
   }
   stop(releaseSeconds) {
-    const ctx = this.engine.ctx;
+    const ctx = this.engine.getContextForVoice();
     const now = ctx.currentTime;
     const g = this.gain.gain;
     g.cancelScheduledValues(now);
@@ -282,7 +388,7 @@ function AudioEngineProvider({
   const [engine] = (0, import_react3.useState)(() => new AudioEngine());
   (0, import_react3.useEffect)(() => {
     return () => {
-      void engine.ctx.close();
+      engine.close();
     };
   }, [engine]);
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(AudioEngineContext.Provider, { value: engine, children });
@@ -296,20 +402,6 @@ function useAudioEngine() {
     throw new Error("useAudioEngine must be used within AudioEngineProvider");
   }
   return engine;
-}
-
-// src/components/AudioEngineContext/helpers/unlockAudioContext.ts
-function unlockAudioContext(ctx) {
-  if (ctx.state === "running") return;
-  void ctx.resume();
-  try {
-    const buffer = ctx.createBuffer(1, 1, 22050);
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(ctx.destination);
-    source.start(0);
-  } catch (e) {
-  }
 }
 
 // src/components/ChaosPad/hooks/useChaosAudio.ts
@@ -358,7 +450,7 @@ function useChaosAudio() {
         isActiveRef.current = true;
       };
       try {
-        unlockAudioContext(engine.ctx);
+        engine.unlock();
       } finally {
         run();
       }
@@ -406,7 +498,7 @@ var handleRemoteEvent = ({
   remoteRelease
 }) => {
   var _a;
-  unlockAudioContext(engine.ctx);
+  engine.unlock();
   if (type === "start") {
     const existing = remoteUsersRef[userId];
     if (existing) {
@@ -462,15 +554,24 @@ function useAudioUnlock() {
   const engine = useAudioEngine();
   (0, import_react9.useLayoutEffect)(() => {
     const unlock = () => {
-      unlockAudioContext(engine.ctx);
+      engine.unlock();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") unlock();
     };
     document.addEventListener("touchstart", unlock, UNLOCK_OPTS);
+    document.addEventListener("touchend", unlock, UNLOCK_OPTS);
     document.addEventListener("pointerdown", unlock, UNLOCK_OPTS);
+    document.addEventListener("pointerup", unlock, UNLOCK_OPTS);
     document.addEventListener("click", unlock, UNLOCK_OPTS);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       document.removeEventListener("touchstart", unlock, UNLOCK_OPTS);
+      document.removeEventListener("touchend", unlock, UNLOCK_OPTS);
       document.removeEventListener("pointerdown", unlock, UNLOCK_OPTS);
+      document.removeEventListener("pointerup", unlock, UNLOCK_OPTS);
       document.removeEventListener("click", unlock, UNLOCK_OPTS);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [engine]);
 }
@@ -512,6 +613,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
     const emitHoldMove = () => {
       const session = sessionsRef.current.values().next().value;
       if (!session) return;
+      unlockAudio();
       emit(session.lastX, session.lastY, "move");
     };
     const startHoldHeartbeat = () => {
@@ -542,7 +644,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       stopHoldHeartbeat();
     };
     const unlockAudio = () => {
-      unlockAudioContext(engineRef.current.ctx);
+      engineRef.current.unlock();
     };
     const onTouchStart = () => {
       unlockAudio();
@@ -586,6 +688,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
     };
     const onPointerUp = (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
+      unlockAudio();
       endSession(e.pointerId, e.clientX, e.clientY, e);
     };
     const onPointerCancel = (e) => {
@@ -593,6 +696,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
     };
     const onTouchMove = (e) => {
       if (sessionsRef.current.size === 0) return;
+      unlockAudio();
       const touch = e.touches[0];
       if (!touch) return;
       const firstEntry = sessionsRef.current.entries().next();
@@ -613,6 +717,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       }
     };
     const onTouchEnd = (e) => {
+      unlockAudio();
       if (sessionsRef.current.size === 0) return;
       if (e.touches.length > 0) return;
       endAllSessions(e);
@@ -634,12 +739,12 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
     };
     const target = passThrough ? document : (_a = surfaceRef.current) != null ? _a : document;
     document.addEventListener("touchstart", onTouchStart, PASSIVE_CAPTURE);
+    document.addEventListener("touchend", onTouchEnd, PASSIVE_CAPTURE);
     target.addEventListener("pointerdown", onPointerDown, PASSIVE_CAPTURE);
     target.addEventListener("pointermove", onPointerMove, ACTIVE_CAPTURE);
     target.addEventListener("pointerup", onPointerUp, PASSIVE_CAPTURE);
     target.addEventListener("pointercancel", onPointerCancel, PASSIVE_CAPTURE);
     document.addEventListener("touchmove", onTouchMove, ACTIVE_CAPTURE);
-    document.addEventListener("touchend", onTouchEnd, PASSIVE_CAPTURE);
     document.addEventListener("touchcancel", onTouchCancel, PASSIVE_CAPTURE);
     document.addEventListener("visibilitychange", endAllSessions);
     window.addEventListener("blur", endAllSessions);
@@ -649,6 +754,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
     }
     return () => {
       document.removeEventListener("touchstart", onTouchStart, PASSIVE_CAPTURE);
+      document.removeEventListener("touchend", onTouchEnd, PASSIVE_CAPTURE);
       target.removeEventListener("pointerdown", onPointerDown, PASSIVE_CAPTURE);
       target.removeEventListener("pointermove", onPointerMove, ACTIVE_CAPTURE);
       target.removeEventListener("pointerup", onPointerUp, PASSIVE_CAPTURE);
