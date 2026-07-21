@@ -1,3 +1,4 @@
+import { unlockAudioContext } from '@/components/AudioEngineContext/helpers/unlockAudioContext'
 import { useAudioEngine } from '@/components/AudioEngineContext/useAudioEngine'
 import { useEffect } from 'react'
 
@@ -9,9 +10,7 @@ export function useAudioUnlock() {
 
 	useEffect(() => {
 		const unlock = () => {
-			if (engine.ctx.state === 'suspended') {
-				void engine.ctx.resume()
-			}
+			unlockAudioContext(engine.ctx)
 		}
 
 		document.addEventListener('touchstart', unlock, UNLOCK_OPTS)

@@ -18,6 +18,8 @@ const toPixel = (container: HTMLElement, pos: Position) => {
 	}
 }
 
+const LOCAL_GLOW_KEY = '__local__'
+
 const GlowEffect: React.FC<GlowEffectProps> = ({ containerRef }) => {
 	const { color, pos, type, message } = useWebSocket()
 	const { glowIntervalMs, glowSize } = useChaospadConfig()
@@ -46,7 +48,7 @@ const GlowEffect: React.FC<GlowEffectProps> = ({ containerRef }) => {
 			const container = containerRef.current
 			if (!p || t === 'stop' || !container) return
 			const pixel = toPixel(container, p)
-			throttledSpawn(container, pixel.x, pixel.y, c, t)
+			throttledSpawn(container, pixel.x, pixel.y, c, t, LOCAL_GLOW_KEY)
 		}
 
 		tick()
@@ -58,9 +60,10 @@ const GlowEffect: React.FC<GlowEffectProps> = ({ containerRef }) => {
 		if (!message || message.type === 'stop') return
 		const container = containerRef.current
 		if (!container) return
-		const { nx, ny, color, type } = message
+		const { nx, ny, color, type, userId } = message
+		if (!userId) return
 		const { width, height } = container.getBoundingClientRect()
-		throttledSpawn(container, nx * width, ny * height, color, type)
+		throttledSpawn(container, nx * width, ny * height, color, type, userId)
 	}, [message, containerRef, throttledSpawn])
 
 	return null

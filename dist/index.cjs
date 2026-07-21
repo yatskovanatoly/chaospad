@@ -301,6 +301,17 @@ function useAudioEngine() {
   return engine;
 }
 
+// src/components/AudioEngineContext/helpers/unlockAudioContext.ts
+function unlockAudioContext(ctx) {
+  if (ctx.state === "running") return;
+  const buffer = ctx.createBuffer(1, 1, 22050);
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  source.start(0);
+  void ctx.resume();
+}
+
 // src/components/ChaosPad/hooks/useChaosAudio.ts
 var import_react7 = require("react");
 
@@ -346,11 +357,8 @@ function useChaosAudio() {
         voiceRef.current = voice;
         isActiveRef.current = true;
       };
-      if (engine.ctx.state === "suspended") {
-        void engine.ctx.resume().then(run);
-      } else {
-        run();
-      }
+      unlockAudioContext(engine.ctx);
+      run();
     },
     [engine, quantize, reverbLevel, volume]
   );
@@ -395,7 +403,7 @@ var handleRemoteEvent = ({
   remoteRelease
 }) => {
   var _a;
-  void engine.ctx.resume();
+  unlockAudioContext(engine.ctx);
   if (type === "start") {
     const existing = remoteUsersRef[userId];
     if (existing) {
@@ -451,9 +459,7 @@ function useAudioUnlock() {
   const engine = useAudioEngine();
   (0, import_react9.useEffect)(() => {
     const unlock = () => {
-      if (engine.ctx.state === "suspended") {
-        void engine.ctx.resume();
-      }
+      unlockAudioContext(engine.ctx);
     };
     document.addEventListener("touchstart", unlock, UNLOCK_OPTS);
     document.addEventListener("pointerdown", unlock, UNLOCK_OPTS);
@@ -663,11 +669,13 @@ var spawnGlow_default = spawnGlow;
 
 // src/components/ChaosPad/helpers/throttledSpawn.ts
 var createThrottledSpawn = (intervalMs, glowSize) => {
-  let lastGlowTime = 0;
-  return (container, x, y, color, _type) => {
+  const lastGlowTimeByKey = /* @__PURE__ */ new Map();
+  return (container, x, y, color, _type, key = "default") => {
+    var _a;
     const now = Date.now();
+    const lastGlowTime = (_a = lastGlowTimeByKey.get(key)) != null ? _a : 0;
     if (now - lastGlowTime < intervalMs) return;
-    lastGlowTime = now;
+    lastGlowTimeByKey.set(key, now);
     spawnGlow_default(container, x, y, color, glowSize);
   };
 };
@@ -682,6 +690,7 @@ var toPixel = (container, pos) => {
     y: pos.ny * height
   };
 };
+var LOCAL_GLOW_KEY = "__local__";
 var GlowEffect = ({ containerRef }) => {
   const { color, pos, type, message } = useWebSocket_default();
   const { glowIntervalMs, glowSize } = useChaospadConfig();
@@ -705,7 +714,7 @@ var GlowEffect = ({ containerRef }) => {
       const container = containerRef.current;
       if (!p || t === "stop" || !container) return;
       const pixel = toPixel(container, p);
-      throttledSpawn(container, pixel.x, pixel.y, c, t);
+      throttledSpawn(container, pixel.x, pixel.y, c, t, LOCAL_GLOW_KEY);
     };
     tick();
     const id = window.setInterval(tick, glowIntervalMs);
@@ -715,9 +724,10 @@ var GlowEffect = ({ containerRef }) => {
     if (!message || message.type === "stop") return;
     const container = containerRef.current;
     if (!container) return;
-    const { nx, ny, color: color2, type: type2 } = message;
+    const { nx, ny, color: color2, type: type2, userId } = message;
+    if (!userId) return;
     const { width, height } = container.getBoundingClientRect();
-    throttledSpawn(container, nx * width, ny * height, color2, type2);
+    throttledSpawn(container, nx * width, ny * height, color2, type2, userId);
   }, [message, containerRef, throttledSpawn]);
   return null;
 };

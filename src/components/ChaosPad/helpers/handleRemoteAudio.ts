@@ -1,5 +1,6 @@
 import type { RemoteUserType } from '@/components/ChaosPad/hooks/useChaosWs'
 import type { AudioEngine } from '@/components/AudioEngineContext/AudioEngine'
+import { unlockAudioContext } from '@/components/AudioEngineContext/helpers/unlockAudioContext'
 import type { QuantizeMode } from '@/components/AudioEngineContext/helpers/quantizeFreq'
 
 const handleRemoteEvent = ({
@@ -12,7 +13,7 @@ const handleRemoteEvent = ({
 	quantize,
 	remoteRelease,
 }: RemoteProps) => {
-	void engine.ctx.resume()
+	unlockAudioContext(engine.ctx)
 
 	if (type === 'start') {
 		const existing = remoteUsersRef[userId]

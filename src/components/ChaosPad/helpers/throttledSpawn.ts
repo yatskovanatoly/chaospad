@@ -2,7 +2,7 @@ import type { MotionType } from '@/components/WsContext/WsContextProvider'
 import spawnGlow from './spawnGlow'
 
 const createThrottledSpawn = (intervalMs: number, glowSize: number) => {
-	let lastGlowTime = 0
+	const lastGlowTimeByKey = new Map<string, number>()
 
 	return (
 		container: HTMLElement,
@@ -10,10 +10,12 @@ const createThrottledSpawn = (intervalMs: number, glowSize: number) => {
 		y: number,
 		color: string,
 		_type: MotionType,
+		key = 'default',
 	) => {
 		const now = Date.now()
+		const lastGlowTime = lastGlowTimeByKey.get(key) ?? 0
 		if (now - lastGlowTime < intervalMs) return
-		lastGlowTime = now
+		lastGlowTimeByKey.set(key, now)
 		spawnGlow(container, x, y, color, glowSize)
 	}
 }

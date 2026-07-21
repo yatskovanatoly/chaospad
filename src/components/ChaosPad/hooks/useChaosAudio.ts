@@ -1,6 +1,7 @@
 import { useChaospadConfig } from '@/context/ChaospadConfigContext'
 import type { Voice } from '@/components/AudioEngineContext/AudioEngine'
 import { useAudioEngine } from '@/components/AudioEngineContext'
+import { unlockAudioContext } from '@/components/AudioEngineContext/helpers/unlockAudioContext'
 import { useCallback, useEffect, useRef } from 'react'
 import useWebSocket from '../../WsContext/useWebSocket'
 
@@ -32,11 +33,9 @@ export function useChaosAudio() {
 				voiceRef.current = voice
 				isActiveRef.current = true
 			}
-			if (engine.ctx.state === 'suspended') {
-				void engine.ctx.resume().then(run)
-			} else {
-				run()
-			}
+			// iOS: voice must start in the same gesture stack as resume().
+			unlockAudioContext(engine.ctx)
+			run()
 		},
 		[engine, quantize, reverbLevel, volume],
 	)
