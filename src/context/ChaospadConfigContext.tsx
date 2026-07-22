@@ -24,7 +24,9 @@ export function ChaospadConfigProvider({
 	config?: ChaospadConfig
 	children: ReactNode
 }) {
-	const [resolved, setResolved] = useState(() => resolveChaospadConfig(config))
+	const [resolved, setResolved] = useState(() =>
+		resolveChaospadConfig(config, { ssr: true }),
+	)
 
 	useEffect(() => {
 		setResolved(resolveChaospadConfig(config))

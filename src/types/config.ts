@@ -68,13 +68,16 @@ const readEnvWsPort = (): number | undefined => {
  * - http://192.168.x.x:3000 -> ws://192.168.x.x:3003
  * - https://example.com -> wss://example.com:3003
  */
-export function resolveDefaultWsUrl(wsPort = DEFAULT_WS_PORT): string {
+export function resolveDefaultWsUrl(
+	wsPort = DEFAULT_WS_PORT,
+	opts?: { ssr?: boolean },
+): string {
 	const fromEnv = readEnvWsUrl()
 	if (fromEnv) return fromEnv
 
 	const port = readEnvWsPort() ?? wsPort
 
-	if (typeof window === 'undefined') {
+	if (opts?.ssr || typeof window === 'undefined') {
 		return `ws://localhost:${port}`
 	}
 
@@ -99,9 +102,10 @@ export const DEFAULT_CHAOSPAD_CONFIG: Required<
 
 export function resolveChaospadConfig(
 	config?: ChaospadConfig,
+	opts?: { ssr?: boolean },
 ): ResolvedChaospadConfig {
 	const wsPort = config?.wsPort ?? readEnvWsPort() ?? DEFAULT_WS_PORT
-	const wsUrl = config?.wsUrl?.trim() || resolveDefaultWsUrl(wsPort)
+	const wsUrl = config?.wsUrl?.trim() || resolveDefaultWsUrl(wsPort, opts)
 
 	return {
 		wsUrl,

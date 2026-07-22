@@ -43,9 +43,13 @@ declare const DEFAULT_WS_URL = "ws://localhost:3003";
  * - http://192.168.x.x:3000 -> ws://192.168.x.x:3003
  * - https://example.com -> wss://example.com:3003
  */
-declare function resolveDefaultWsUrl(wsPort?: number): string;
+declare function resolveDefaultWsUrl(wsPort?: number, opts?: {
+    ssr?: boolean;
+}): string;
 declare const DEFAULT_CHAOSPAD_CONFIG: Required<Omit<ChaospadConfig, 'userId'>>;
-declare function resolveChaospadConfig(config?: ChaospadConfig): ResolvedChaospadConfig;
+declare function resolveChaospadConfig(config?: ChaospadConfig, opts?: {
+    ssr?: boolean;
+}): ResolvedChaospadConfig;
 declare function resolveWebSocketUrl(url: string): string;
 
 type ChaospadProps = {

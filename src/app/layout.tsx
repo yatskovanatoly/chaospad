@@ -1,4 +1,3 @@
-import MkCodeCredit from '@/components/MkcodeCredit'
 import type { Metadata } from 'next'
 import './globals.css'
 
@@ -14,10 +13,7 @@ export default function RootLayout({
 }>) {
 	return (
 		<html lang='en'>
-			<body>
-				{children}
-				<MkCodeCredit />
-			</body>
+			<body>{children}</body>
 		</html>
 	)
 }

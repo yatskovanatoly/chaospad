@@ -38,12 +38,12 @@ var readEnvWsPort = () => {
   const port = Number(raw);
   return Number.isFinite(port) ? port : void 0;
 };
-function resolveDefaultWsUrl(wsPort = DEFAULT_WS_PORT) {
+function resolveDefaultWsUrl(wsPort = DEFAULT_WS_PORT, opts) {
   var _a;
   const fromEnv = readEnvWsUrl();
   if (fromEnv) return fromEnv;
   const port = (_a = readEnvWsPort()) != null ? _a : wsPort;
-  if (typeof window === "undefined") {
+  if ((opts == null ? void 0 : opts.ssr) || typeof window === "undefined") {
     return `ws://localhost:${port}`;
   }
   const wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -61,10 +61,10 @@ var DEFAULT_CHAOSPAD_CONFIG = {
   glowSize: 50,
   pointerPassThrough: true
 };
-function resolveChaospadConfig(config) {
+function resolveChaospadConfig(config, opts) {
   var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
   const wsPort = (_b = (_a = config == null ? void 0 : config.wsPort) != null ? _a : readEnvWsPort()) != null ? _b : DEFAULT_WS_PORT;
-  const wsUrl = ((_c = config == null ? void 0 : config.wsUrl) == null ? void 0 : _c.trim()) || resolveDefaultWsUrl(wsPort);
+  const wsUrl = ((_c = config == null ? void 0 : config.wsUrl) == null ? void 0 : _c.trim()) || resolveDefaultWsUrl(wsPort, opts);
   return {
     wsUrl,
     wsPort,
@@ -101,7 +101,9 @@ function ChaospadConfigProvider({
   config,
   children
 }) {
-  const [resolved, setResolved] = useState(() => resolveChaospadConfig(config));
+  const [resolved, setResolved] = useState(
+    () => resolveChaospadConfig(config, { ssr: true })
+  );
   useEffect(() => {
     setResolved(resolveChaospadConfig(config));
   }, [config]);
