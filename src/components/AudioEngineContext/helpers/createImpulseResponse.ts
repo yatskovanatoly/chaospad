@@ -1,7 +1,7 @@
 export const createImpulseResponse = (
 	ctx: AudioContext,
-	duration = 2,
-	decay = 2
+	duration = 5,
+	decay = 3.2
 ) => {
 	const rate = ctx.sampleRate
 	const length = rate * duration

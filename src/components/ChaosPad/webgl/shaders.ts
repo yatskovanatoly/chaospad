@@ -28,10 +28,8 @@ void main() {
 	float core = exp(-d2 * 16.0);
 	float halo = exp(-d2 * 5.5);
 	float energy = (core * 0.9 + halo * 0.1) * pow(vLife, 0.82);
-	float luma = dot(vColor, vec3(0.299, 0.587, 0.114));
-	vec3 col = mix(vec3(luma), vColor, 1.35);
 	float alpha = energy * 0.88;
-	vec3 rgb = col * energy * 0.92;
+	vec3 rgb = vColor * energy * 0.92;
 	outColor = vec4(rgb, alpha);
 }
 `

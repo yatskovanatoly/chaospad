@@ -1,7 +1,8 @@
 import { fbm } from './flowField'
-import { parseHexColor } from './glUtils'
 import type { BurstMetrics, FlowState, Particle } from './types'
 import type { SplatInput } from '../visual/types'
+
+const SEPIA_BASE: [number, number, number] = [0.84, 0.67, 0.44]
 
 type Ctx = {
 	s: SplatInput
@@ -82,6 +83,7 @@ export function makeParticle({ s, m, flow, rgb, seed, i }: Ctx): Particle {
 	}
 }
 
-export function splatColor(s: SplatInput): [number, number, number] {
-	return parseHexColor(s.color)
+export function splatColor(_s: SplatInput): [number, number, number] {
+	const v = 0.9 + Math.random() * 0.2
+	return [SEPIA_BASE[0] * v, SEPIA_BASE[1] * v, SEPIA_BASE[2] * v]
 }

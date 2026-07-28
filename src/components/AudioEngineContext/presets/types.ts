@@ -11,6 +11,6 @@ export type PresetVoice = {
 	dispose: () => void
 }
 
-export type PresetId = 0 | 1 | 2 | 3
+export type PresetId = 0 | 1
 
 export type PresetFactory = (ctx: AudioContext) => PresetVoice

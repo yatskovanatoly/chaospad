@@ -53,9 +53,9 @@ var DEFAULT_CHAOSPAD_CONFIG = {
   wsUrl: DEFAULT_WS_URL,
   wsPort: DEFAULT_WS_PORT,
   volume: 1,
-  reverbLevel: 0.5,
-  release: 0.5,
-  remoteRelease: 0.5,
+  reverbLevel: 0.72,
+  release: 1.1,
+  remoteRelease: 1.1,
   quantize: "chromatic",
   glowIntervalMs: 50,
   pointerPassThrough: true
@@ -118,7 +118,7 @@ function useChaospadConfig() {
 }
 
 // src/components/AudioEngineContext/helpers/createImpulseResponse.ts
-var createImpulseResponse = (ctx, duration = 2, decay = 2) => {
+var createImpulseResponse = (ctx, duration = 5, decay = 3.2) => {
   const rate = ctx.sampleRate;
   const length = rate * duration;
   const impulse2 = ctx.createBuffer(2, length, rate);
@@ -187,8 +187,8 @@ function unlockAudioForGesture(ctx) {
 
 // src/components/AudioEngineContext/helpers/getSoundParams.ts
 var getSoundParamsFromXY = (nx, ny) => {
-  const minFreq = 256;
-  const maxFreq = 512;
+  const minFreq = 174;
+  const maxFreq = 349;
   const x = Math.min(1, Math.max(0, nx));
   const y = Math.min(1, Math.max(0, ny));
   const freq = minFreq * Math.pow(maxFreq / minFreq, x);
@@ -203,42 +203,43 @@ var quantizeFreq = (freq, mode) => {
 };
 
 // src/components/AudioEngineContext/helpers/padParams.ts
-function getPadParams(nx, ny, quantize = "none") {
+var REVERB_BY_PRESET = {
+  0: { base: 0.68, range: 0.3 },
+  1: { base: 0.48, range: 0.24 }
+};
+function getPadParams(nx, ny, quantize = "none", presetId = 0) {
   const { freq: rawFreq, amp } = getSoundParamsFromXY(nx, ny);
+  const reverb = REVERB_BY_PRESET[presetId];
   return {
     freq: quantizeFreq(rawFreq, quantize),
-    amp: amp * 0.5,
-    pan: nx * 2 - 1,
-    reverbSend: ny * 0.75
+    amp: 0.22 + amp * 0.34,
+    pan: (nx - 0.5) * 1.2,
+    reverbSend: reverb.base + ny * reverb.range
   };
 }
 
 // src/components/AudioEngineContext/helpers/spatialChain.ts
 var SMOOTH = 0.03;
-function createSpatialChain(ctx) {
+function createSpatialChain(ctx, dryTarget, sendTarget) {
   const input = ctx.createGain();
   const panner = ctx.createStereoPanner();
-  const dryOut = ctx.createGain();
-  const wetOut = ctx.createGain();
+  const sendGain = ctx.createGain();
   input.connect(panner);
-  panner.connect(dryOut);
-  panner.connect(wetOut);
+  panner.connect(dryTarget);
+  panner.connect(sendGain);
+  sendGain.connect(sendTarget);
   const setParams = (pan, reverbSend) => {
     const t = ctx.currentTime;
     panner.pan.setTargetAtTime(pan, t, SMOOTH);
-    dryOut.gain.setTargetAtTime(1 - reverbSend * 0.65, t, SMOOTH);
-    wetOut.gain.setTargetAtTime(reverbSend, t, SMOOTH);
+    sendGain.gain.setTargetAtTime(reverbSend, t, SMOOTH);
   };
   return {
     input,
-    dryOut,
-    wetOut,
     setParams,
     dispose: () => {
       input.disconnect();
       panner.disconnect();
-      dryOut.disconnect();
-      wetOut.disconnect();
+      sendGain.disconnect();
     }
   };
 }
@@ -272,285 +273,269 @@ var getUserId = () => {
   }
 };
 
-// src/components/AudioEngineContext/presets/fmBell.ts
-var SMOOTH2 = 0.03;
-var MOD_RATIO = 4.07;
-function createFmBell(ctx) {
-  const output = ctx.createGain();
-  const carrier = ctx.createOscillator();
-  const mod = ctx.createOscillator();
-  const modGain = ctx.createGain();
-  const high = ctx.createBiquadFilter();
-  carrier.type = "sine";
-  mod.type = "sine";
-  high.type = "highpass";
-  high.frequency.value = 380;
-  high.Q.value = 0.7;
-  carrier.connect(output);
-  carrier.connect(high);
-  high.connect(output);
-  mod.connect(modGain);
-  modGain.connect(carrier.frequency);
-  return {
-    output,
-    setParams(p) {
-      const t = ctx.currentTime;
-      carrier.frequency.setTargetAtTime(p.freq, t, SMOOTH2);
-      mod.frequency.setTargetAtTime(p.freq * MOD_RATIO, t, SMOOTH2);
-      modGain.gain.setTargetAtTime(600 + p.freq * 6.5, t, SMOOTH2);
-      high.frequency.setTargetAtTime(280 + p.freq * 0.6, t, SMOOTH2);
-      output.gain.setTargetAtTime(p.amp * 0.72, t, SMOOTH2);
-    },
-    start(when) {
-      carrier.start(when);
-      mod.start(when);
-    },
-    stop(release, when) {
-      output.gain.cancelScheduledValues(when);
-      output.gain.setValueAtTime(output.gain.value, when);
-      output.gain.linearRampToValueAtTime(0, when + release);
-      const end = when + release + 0.05;
-      carrier.stop(end);
-      mod.stop(end);
-    },
-    dispose() {
-      carrier.disconnect();
-      mod.disconnect();
-      modGain.disconnect();
-      high.disconnect();
-      output.disconnect();
-    }
-  };
+// src/components/AudioEngineContext/presets/padShared.ts
+var PAD_SMOOTH = 0.11;
+function createGrainBuffer(ctx, seconds = 2.4) {
+  const len = Math.floor(ctx.sampleRate * seconds);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < len; i++) {
+    const white = Math.random() * 2 - 1;
+    last = last * 0.91 + white * 0.09;
+    if (Math.random() < 18e-4) last += (Math.random() - 0.5) * 0.35;
+    data[i] = last;
+  }
+  return buf;
 }
-
-// src/components/AudioEngineContext/presets/filteredSaw.ts
-var SMOOTH3 = 0.03;
-function createFilteredSaw(ctx) {
-  const output = ctx.createGain();
-  const sine = ctx.createOscillator();
-  const tri = ctx.createOscillator();
-  const sineGain = ctx.createGain();
-  const triGain = ctx.createGain();
-  const filter = ctx.createBiquadFilter();
-  sine.type = "sine";
-  tri.type = "triangle";
-  sineGain.gain.value = 0.62;
-  triGain.gain.value = 0.28;
-  filter.type = "lowpass";
-  filter.Q.value = 0.45;
-  sine.connect(sineGain);
-  tri.connect(triGain);
-  sineGain.connect(filter);
-  triGain.connect(filter);
-  filter.connect(output);
-  const vibrato = ctx.createOscillator();
-  const vibratoDepth = ctx.createGain();
-  vibrato.frequency.value = 2.8;
-  vibratoDepth.gain.value = 5;
-  vibrato.connect(vibratoDepth);
-  vibratoDepth.connect(sine.detune);
-  vibratoDepth.connect(tri.detune);
-  return {
-    output,
-    setParams(p) {
-      const t = ctx.currentTime;
-      sine.frequency.setTargetAtTime(p.freq, t, SMOOTH3);
-      tri.frequency.setTargetAtTime(p.freq, t, SMOOTH3);
-      filter.frequency.setTargetAtTime(520 + p.freq * 1.6, t, SMOOTH3);
-      output.gain.setTargetAtTime(p.amp * 0.88, t, SMOOTH3);
-    },
-    start(when) {
-      sine.start(when);
-      tri.start(when);
-      vibrato.start(when);
-    },
-    stop(release, when) {
-      output.gain.cancelScheduledValues(when);
-      output.gain.setValueAtTime(output.gain.value, when);
-      output.gain.linearRampToValueAtTime(0, when + release);
-      const end = when + release + 0.05;
-      sine.stop(end);
-      tri.stop(end);
-      vibrato.stop(end);
-    },
-    dispose() {
-      sine.disconnect();
-      tri.disconnect();
-      sineGain.disconnect();
-      triGain.disconnect();
-      filter.disconnect();
-      vibrato.disconnect();
-      output.disconnect();
-    }
-  };
+function connectChorusLfo(ctx, lfoRate, depthCents, targets) {
+  const lfo = ctx.createOscillator();
+  const depth = ctx.createGain();
+  lfo.frequency.value = lfoRate;
+  depth.gain.value = depthCents;
+  lfo.connect(depth);
+  targets.forEach((osc) => depth.connect(osc.detune));
+  return lfo;
 }
-
-// src/components/AudioEngineContext/presets/noiseRes.ts
-var SMOOTH4 = 0.03;
-function createNoiseRes(ctx) {
-  const output = ctx.createGain();
-  const voices = [
-    { detune: 0, level: 0.46 },
-    { detune: -22, level: 0.27 },
-    { detune: 22, level: 0.27 },
-    { detune: -8, level: 0.14, octave: 0.5 },
-    { detune: 5, level: 0.1, octave: 2 }
-  ];
+function addGrainLayer(ctx, source, out, filter, level) {
+  const node = ctx.createBufferSource();
+  node.buffer = source;
+  node.loop = true;
+  const gain = ctx.createGain();
+  gain.gain.value = level;
+  node.connect(filter);
+  filter.connect(gain);
+  gain.connect(out);
+  return { node, gain, filter };
+}
+var BASE_VOICES = [
+  { detune: 0, level: 0.26 },
+  { detune: -8, level: 0.18 },
+  { detune: 8, level: 0.18 },
+  { detune: -16, level: 0.1 },
+  { detune: 16, level: 0.1 }
+];
+var HARMONIC_VOICES = [
+  { detune: 2, level: 0.048, octave: 2 },
+  { detune: -3, level: 0.032, octave: 3 },
+  { detune: 1, level: 0.02, octave: 4 },
+  { detune: -5, level: 0.014, octave: 5 }
+];
+function createPadVoice(ctx, opts) {
+  var _a, _b;
+  const out = ctx.createGain();
+  out.gain.value = 1;
+  const padBus = ctx.createGain();
+  const voices = [...BASE_VOICES, ...HARMONIC_VOICES];
   const oscs = voices.map((v) => {
-    var _a;
+    var _a2;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = "sine";
     osc.detune.value = v.detune;
     gain.gain.value = v.level;
     osc.connect(gain);
-    gain.connect(output);
-    return { osc, gain, octave: (_a = v.octave) != null ? _a : 1 };
+    gain.connect(padBus);
+    return { osc, gain, octave: (_a2 = v.octave) != null ? _a2 : 1 };
   });
-  const vibrato = ctx.createOscillator();
-  const vibratoDepth = ctx.createGain();
-  vibrato.frequency.value = 3.1;
-  vibratoDepth.gain.value = 14;
-  vibrato.connect(vibratoDepth);
-  oscs.forEach(({ osc }) => vibratoDepth.connect(osc.detune));
+  const chorusA = connectChorusLfo(
+    ctx,
+    0.06,
+    6.5,
+    oscs.slice(0, 3).map(({ osc }) => osc)
+  );
+  const chorusB = connectChorusLfo(
+    ctx,
+    0.11,
+    5,
+    oscs.slice(3, 5).map(({ osc }) => osc)
+  );
+  const breath = ctx.createOscillator();
+  const breathDepth = ctx.createGain();
+  breath.frequency.value = 0.05;
+  breathDepth.gain.value = 0.075;
+  breath.connect(breathDepth);
+  breathDepth.connect(padBus.gain);
   const tone = ctx.createBiquadFilter();
   tone.type = "lowpass";
-  tone.frequency.value = 1600;
-  tone.Q.value = 0.45;
-  output.connect(tone);
-  const out = ctx.createGain();
-  tone.connect(out);
+  tone.frequency.value = opts.toneHz;
+  tone.Q.value = opts.toneQ;
+  const warmth = ctx.createBiquadFilter();
+  warmth.type = "lowpass";
+  warmth.frequency.value = opts.warmthHz;
+  warmth.Q.value = opts.warmthQ;
+  padBus.connect(tone);
+  tone.connect(warmth);
+  let tail = warmth;
+  if (opts.resonanceHz != null && opts.resonanceQ != null && opts.resonanceGain != null) {
+    const peak = ctx.createBiquadFilter();
+    peak.type = "peaking";
+    peak.frequency.value = opts.resonanceHz;
+    peak.Q.value = opts.resonanceQ;
+    peak.gain.value = opts.resonanceGain;
+    warmth.connect(peak);
+    tail = peak;
+  }
+  tail.connect(out);
+  const grainBuffer = createGrainBuffer(ctx);
+  const grainBus = ctx.createGain();
+  grainBus.connect(out);
+  const bodyFilter = ctx.createBiquadFilter();
+  bodyFilter.type = "lowpass";
+  bodyFilter.frequency.value = 460;
+  bodyFilter.Q.value = 0.35;
+  const brightFilter = ctx.createBiquadFilter();
+  brightFilter.type = "bandpass";
+  brightFilter.frequency.value = 1180;
+  brightFilter.Q.value = 0.65;
+  const bodyGrain = addGrainLayer(
+    ctx,
+    grainBuffer,
+    grainBus,
+    bodyFilter,
+    opts.grainLevel
+  );
+  const brightGrain = addGrainLayer(
+    ctx,
+    grainBuffer,
+    grainBus,
+    brightFilter,
+    (_a = opts.grainBrightLevel) != null ? _a : opts.grainLevel * 0.55
+  );
+  const grainDrift = ctx.createOscillator();
+  const grainDriftDepth = ctx.createGain();
+  grainDrift.frequency.value = 0.35;
+  grainDriftDepth.gain.value = opts.grainLevel * 0.55;
+  grainDrift.connect(grainDriftDepth);
+  grainDriftDepth.connect(bodyGrain.gain.gain);
+  const grainShimmer = ctx.createOscillator();
+  const grainShimmerDepth = ctx.createGain();
+  grainShimmer.frequency.value = 6.2;
+  grainShimmerDepth.gain.value = ((_b = opts.grainBrightLevel) != null ? _b : opts.grainLevel * 0.55) * 0.35;
+  grainShimmer.connect(grainShimmerDepth);
+  grainShimmerDepth.connect(brightGrain.gain.gain);
+  const lfos = [chorusA, chorusB, breath, grainDrift, grainShimmer];
+  const grains = [bodyGrain, brightGrain];
   return {
     output: out,
     setParams(p) {
+      var _a2;
       const t = ctx.currentTime;
+      const bright = 0.3 + p.amp * 0.55;
       oscs.forEach(
-        ({ osc, octave }) => osc.frequency.setTargetAtTime(p.freq * octave, t, SMOOTH4)
+        ({ osc, octave }) => osc.frequency.setTargetAtTime(p.freq * octave, t, PAD_SMOOTH)
       );
-      tone.frequency.setTargetAtTime(680 + p.freq * 2.1, t, SMOOTH4);
-      out.gain.setTargetAtTime(p.amp * 0.92, t, SMOOTH4);
+      tone.frequency.setTargetAtTime(
+        opts.toneHz * 0.65 + p.freq * bright * 1.2,
+        t,
+        PAD_SMOOTH
+      );
+      warmth.frequency.setTargetAtTime(
+        opts.warmthHz * 0.68 + p.freq * bright * 0.48,
+        t,
+        PAD_SMOOTH
+      );
+      if (tail instanceof BiquadFilterNode && tail.type === "peaking") {
+        tail.frequency.setTargetAtTime(p.freq * 1.01, t, PAD_SMOOTH);
+      }
+      bodyFilter.frequency.setTargetAtTime(360 + p.freq * 0.85, t, PAD_SMOOTH);
+      brightFilter.frequency.setTargetAtTime(860 + p.freq * 1.6, t, PAD_SMOOTH);
+      bodyGrain.gain.gain.setTargetAtTime(
+        opts.grainLevel * (0.82 + p.amp * 0.55),
+        t,
+        PAD_SMOOTH
+      );
+      brightGrain.gain.gain.setTargetAtTime(
+        ((_a2 = opts.grainBrightLevel) != null ? _a2 : opts.grainLevel * 0.55) * (0.78 + p.amp * 0.62),
+        t,
+        PAD_SMOOTH
+      );
     },
     start(when) {
       oscs.forEach(({ osc }) => osc.start(when));
-      vibrato.start(when);
+      lfos.forEach((lfo) => lfo.start(when));
+      grains.forEach(({ node }) => node.start(when));
     },
-    stop(release, when) {
-      out.gain.cancelScheduledValues(when);
-      out.gain.setValueAtTime(out.gain.value, when);
-      out.gain.linearRampToValueAtTime(0, when + release);
-      const end = when + release + 0.05;
+    stop(_release, when) {
+      const end = when + _release + 0.08;
       oscs.forEach(({ osc }) => osc.stop(end));
-      vibrato.stop(end);
+      lfos.forEach((lfo) => lfo.stop(end));
+      grains.forEach(({ node }) => node.stop(end));
     },
     dispose() {
       oscs.forEach(({ osc, gain }) => {
         osc.disconnect();
         gain.disconnect();
       });
-      vibrato.disconnect();
+      lfos.forEach((lfo) => lfo.disconnect());
+      breathDepth.disconnect();
+      grainDriftDepth.disconnect();
+      grainShimmerDepth.disconnect();
+      grains.forEach(({ node, gain, filter }) => {
+        node.disconnect();
+        gain.disconnect();
+        filter.disconnect();
+      });
+      grainBus.disconnect();
       tone.disconnect();
+      warmth.disconnect();
+      if (tail !== warmth) tail.disconnect();
+      padBus.disconnect();
       out.disconnect();
     }
   };
 }
 
-// src/components/AudioEngineContext/presets/sineChorus.ts
-var SMOOTH5 = 0.03;
-function createSineChorus(ctx) {
-  const output = ctx.createGain();
-  const voices = [
-    { type: "triangle", detune: 0, level: 0.5 },
-    { type: "triangle", detune: -14, level: 0.28 },
-    { type: "triangle", detune: 14, level: 0.28 },
-    { type: "sine", detune: 0, level: 0.12, octave: 2 }
-  ];
-  const oscs = voices.map((v) => {
-    var _a;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = v.type;
-    osc.detune.value = v.detune;
-    gain.gain.value = v.level;
-    osc.connect(gain);
-    gain.connect(output);
-    return { osc, gain, octave: (_a = v.octave) != null ? _a : 1 };
+// src/components/AudioEngineContext/presets/ambientPad.ts
+function createAmbientPad(ctx) {
+  return createPadVoice(ctx, {
+    toneHz: 760,
+    toneQ: 0.28,
+    warmthHz: 460,
+    warmthQ: 0.22,
+    grainLevel: 0.042,
+    grainBrightLevel: 0.024
   });
-  const vibrato = ctx.createOscillator();
-  const vibratoDepth = ctx.createGain();
-  vibrato.frequency.value = 5.2;
-  vibratoDepth.gain.value = 10;
-  vibrato.connect(vibratoDepth);
-  oscs.forEach(({ osc }) => vibratoDepth.connect(osc.detune));
-  const tone = ctx.createBiquadFilter();
-  tone.type = "lowpass";
-  tone.frequency.value = 2200;
-  tone.Q.value = 0.6;
-  output.connect(tone);
-  const out = ctx.createGain();
-  tone.connect(out);
-  return {
-    output: out,
-    setParams(p) {
-      const t = ctx.currentTime;
-      oscs.forEach(
-        ({ osc, octave }) => osc.frequency.setTargetAtTime(p.freq * octave, t, SMOOTH5)
-      );
-      tone.frequency.setTargetAtTime(900 + p.freq * 2.8, t, SMOOTH5);
-      out.gain.setTargetAtTime(p.amp * 0.95, t, SMOOTH5);
-    },
-    start(when) {
-      oscs.forEach(({ osc }) => osc.start(when));
-      vibrato.start(when);
-    },
-    stop(release, when) {
-      out.gain.cancelScheduledValues(when);
-      out.gain.setValueAtTime(out.gain.value, when);
-      out.gain.linearRampToValueAtTime(0, when + release);
-      const end = when + release + 0.05;
-      oscs.forEach(({ osc }) => osc.stop(end));
-      vibrato.stop(end);
-    },
-    dispose() {
-      oscs.forEach(({ osc, gain }) => {
-        osc.disconnect();
-        gain.disconnect();
-      });
-      vibrato.disconnect();
-      tone.disconnect();
-      out.disconnect();
-    }
-  };
+}
+
+// src/components/AudioEngineContext/presets/resonantPad.ts
+function createResonantPad(ctx) {
+  return createPadVoice(ctx, {
+    toneHz: 940,
+    toneQ: 0.42,
+    warmthHz: 580,
+    warmthQ: 0.34,
+    resonanceHz: 220,
+    resonanceQ: 2.1,
+    resonanceGain: 3.6,
+    grainLevel: 0.036,
+    grainBrightLevel: 0.021
+  });
 }
 
 // src/components/AudioEngineContext/presets/catalog.ts
-var PRESETS = [
-  createSineChorus,
-  createFmBell,
-  createFilteredSaw,
-  createNoiseRes
-];
+var PRESETS = [createAmbientPad, createResonantPad];
 var PRESET_COUNT = PRESETS.length;
 function getPresetForUser(userId) {
-  const index = hashUserIndex(userId, PRESET_COUNT);
-  return index;
+  return hashUserIndex(userId, PRESET_COUNT);
 }
 function createPresetVoice(ctx, presetId) {
   return PRESETS[presetId](ctx);
 }
 
 // src/components/AudioEngineContext/Voice.ts
-var ATTACK_S = 0.1;
+var ATTACK_S = 0.72;
 var Voice = class {
   constructor(engine, position, quantize, presetId) {
     this.engine = engine;
     this.quantize = quantize;
+    this.presetId = presetId;
     const ctx = engine.getContextForVoice();
+    this.route = engine.createVoiceRoute();
     this.preset = createPresetVoice(ctx, presetId);
-    this.spatial = createSpatialChain(ctx);
+    this.spatial = createSpatialChain(ctx, this.route.dry, this.route.send);
     this.preset.output.connect(this.spatial.input);
-    engine.connectDry(this.spatial.dryOut);
-    engine.connectWet(this.spatial.wetOut);
-    const params = getPadParams(position.nx, position.ny, quantize);
+    const params = getPadParams(position.nx, position.ny, quantize, presetId);
     this.spatial.setParams(params.pan, params.reverbSend);
     const now = ctx.currentTime;
     this.preset.setParams({ freq: params.freq, amp: 0 });
@@ -559,11 +544,14 @@ var Voice = class {
     this.preset.start(now + 1e-3);
   }
   updatePosition(nx, ny) {
-    this.applyParams(getPadParams(nx, ny, this.quantize));
+    this.applyParams(getPadParams(nx, ny, this.quantize, this.presetId));
   }
   stop(releaseSeconds) {
     const ctx = this.engine.getContextForVoice();
     const now = ctx.currentTime;
+    this.preset.output.gain.cancelScheduledValues(now);
+    this.preset.output.gain.setValueAtTime(this.preset.output.gain.value, now);
+    this.preset.output.gain.linearRampToValueAtTime(0, now + releaseSeconds);
     this.preset.stop(releaseSeconds, now);
     if (this.releaseTimer) clearTimeout(this.releaseTimer);
     this.releaseTimer = setTimeout(() => this.dispose(), releaseSeconds * 1e3 + 100);
@@ -575,6 +563,7 @@ var Voice = class {
   dispose() {
     this.preset.dispose();
     this.spatial.dispose();
+    this.engine.releaseVoiceRoute(this.route);
   }
 };
 
@@ -583,11 +572,16 @@ var AudioEngine = class {
   constructor() {
     this.ctx = null;
     this.masterGain = null;
+    this.limiter = null;
+    this.drySum = null;
+    this.reverbSendSum = null;
+    this.reverbSendTrim = null;
     this.convolver = null;
     this.convolverGain = null;
     this.graphReady = false;
     this.volumeValue = 1;
     this.reverbLevelValue = 0.5;
+    this.voiceRoutes = [];
   }
   unlock() {
     if (!this.ctx) this.ctx = createAudioContext();
@@ -603,8 +597,13 @@ var AudioEngine = class {
     void this.ctx.close();
     this.ctx = null;
     this.masterGain = null;
+    this.limiter = null;
+    this.drySum = null;
+    this.reverbSendSum = null;
+    this.reverbSendTrim = null;
     this.convolver = null;
     this.convolverGain = null;
+    this.voiceRoutes = [];
     this.graphReady = false;
   }
   setVolume(v) {
@@ -619,11 +618,24 @@ var AudioEngine = class {
     this.unlock();
     return new Voice(this, position, quantize, presetId);
   }
-  connectDry(node) {
-    node.connect(this.masterGain);
+  createVoiceRoute() {
+    const ctx = this.getContextForVoice();
+    const dry = ctx.createGain();
+    const send = ctx.createGain();
+    dry.connect(this.drySum);
+    send.connect(this.reverbSendSum);
+    const route = { dry, send };
+    this.voiceRoutes.push(route);
+    this.rebalanceVoices(ctx);
+    return route;
   }
-  connectWet(node) {
-    if (this.convolver) node.connect(this.convolver);
+  releaseVoiceRoute(route) {
+    const idx = this.voiceRoutes.indexOf(route);
+    if (idx === -1) return;
+    this.voiceRoutes.splice(idx, 1);
+    route.dry.disconnect();
+    route.send.disconnect();
+    if (this.ctx) this.rebalanceVoices(this.ctx);
   }
   getContextForVoice() {
     if (!this.ctx || !this.masterGain) {
@@ -631,23 +643,46 @@ var AudioEngine = class {
     }
     return this.ctx;
   }
+  rebalanceVoices(ctx) {
+    const n = Math.max(1, this.voiceRoutes.length);
+    const scale = 1 / Math.sqrt(n);
+    const t = ctx.currentTime;
+    for (const route of this.voiceRoutes) {
+      route.dry.gain.setTargetAtTime(scale, t, 0.06);
+      route.send.gain.setTargetAtTime(scale, t, 0.06);
+    }
+  }
   initGraph() {
     const ctx = this.ctx;
+    this.drySum = ctx.createGain();
+    this.reverbSendSum = ctx.createGain();
+    this.reverbSendTrim = ctx.createGain();
+    this.reverbSendTrim.gain.value = 0.72;
     this.masterGain = ctx.createGain();
     this.masterGain.gain.value = this.volumeValue;
-    this.masterGain.connect(ctx.destination);
+    this.limiter = ctx.createDynamicsCompressor();
+    this.limiter.threshold.value = -14;
+    this.limiter.knee.value = 12;
+    this.limiter.ratio.value = 4;
+    this.limiter.attack.value = 4e-3;
+    this.limiter.release.value = 0.22;
+    this.drySum.connect(this.masterGain);
     try {
       const impulse2 = createImpulseResponse(ctx);
       this.convolver = ctx.createConvolver();
       this.convolver.buffer = impulse2;
       this.convolverGain = ctx.createGain();
       this.convolverGain.gain.value = this.reverbLevelValue;
+      this.reverbSendSum.connect(this.reverbSendTrim);
+      this.reverbSendTrim.connect(this.convolver);
       this.convolver.connect(this.convolverGain);
       this.convolverGain.connect(this.masterGain);
     } catch (e) {
       this.convolver = null;
       this.convolverGain = null;
     }
+    this.masterGain.connect(this.limiter);
+    this.limiter.connect(ctx.destination);
   }
 };
 
@@ -1265,12 +1300,6 @@ function createProgram(gl, vertexSource, fragmentSource) {
   }
   return program;
 }
-function parseHexColor(hex) {
-  const h = hex.replace("#", "");
-  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
-  const n = Number.parseInt(full, 16);
-  return [(n >> 16) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
-}
 
 // src/components/ChaosPad/webgl/shaders.ts
 var PARTICLE_VERTEX = `#version 300 es
@@ -1302,10 +1331,8 @@ void main() {
 	float core = exp(-d2 * 16.0);
 	float halo = exp(-d2 * 5.5);
 	float energy = (core * 0.9 + halo * 0.1) * pow(vLife, 0.82);
-	float luma = dot(vColor, vec3(0.299, 0.587, 0.114));
-	vec3 col = mix(vec3(luma), vColor, 1.35);
 	float alpha = energy * 0.88;
-	vec3 rgb = col * energy * 0.92;
+	vec3 rgb = vColor * energy * 0.92;
 	outColor = vec4(rgb, alpha);
 }
 `;
@@ -1503,6 +1530,7 @@ var sampleFlow = (x, y, t, seed) => {
 };
 
 // src/components/ChaosPad/webgl/makeParticle.ts
+var SEPIA_BASE = [0.84, 0.67, 0.44];
 function makeParticle({ s, m, flow, rgb, seed, i }) {
   const [cr, cg, cb] = rgb;
   const pSeed = seed + i * 1.618 + Math.random() * 7;
@@ -1557,8 +1585,9 @@ function makeParticle({ s, m, flow, rgb, seed, i }) {
     drag: 0.975 + Math.random() * 0.012
   };
 }
-function splatColor(s) {
-  return parseHexColor(s.color);
+function splatColor(_s) {
+  const v = 0.9 + Math.random() * 0.2;
+  return [SEPIA_BASE[0] * v, SEPIA_BASE[1] * v, SEPIA_BASE[2] * v];
 }
 
 // src/components/ChaosPad/webgl/spawnBurst.ts
