@@ -59,10 +59,11 @@ var DEFAULT_CHAOSPAD_CONFIG = {
   quantize: "chromatic",
   glowIntervalMs: 50,
   glowSize: 50,
+  visualMode: "webgl",
   pointerPassThrough: true
 };
 function resolveChaospadConfig(config, opts) {
-  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
   const wsPort = (_b = (_a = config == null ? void 0 : config.wsPort) != null ? _a : readEnvWsPort()) != null ? _b : DEFAULT_WS_PORT;
   const wsUrl = ((_c = config == null ? void 0 : config.wsUrl) == null ? void 0 : _c.trim()) || resolveDefaultWsUrl(wsPort, opts);
   return {
@@ -76,7 +77,8 @@ function resolveChaospadConfig(config, opts) {
     userId: config == null ? void 0 : config.userId,
     glowIntervalMs: (_i = config == null ? void 0 : config.glowIntervalMs) != null ? _i : DEFAULT_CHAOSPAD_CONFIG.glowIntervalMs,
     glowSize: (_j = config == null ? void 0 : config.glowSize) != null ? _j : DEFAULT_CHAOSPAD_CONFIG.glowSize,
-    pointerPassThrough: (_k = config == null ? void 0 : config.pointerPassThrough) != null ? _k : DEFAULT_CHAOSPAD_CONFIG.pointerPassThrough
+    visualMode: (_k = config == null ? void 0 : config.visualMode) != null ? _k : DEFAULT_CHAOSPAD_CONFIG.visualMode,
+    pointerPassThrough: (_l = config == null ? void 0 : config.pointerPassThrough) != null ? _l : DEFAULT_CHAOSPAD_CONFIG.pointerPassThrough
   };
 }
 function resolveWebSocketUrl(url) {
@@ -749,6 +751,90 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
   }, [passThrough, rootRef, surfaceRef, glowIntervalMs]);
 }
 
+// src/components/ChaosPad/helpers/padVisualBridge.ts
+var handler = null;
+var motionByKey = /* @__PURE__ */ new Map();
+var SMOOTH = 0.11;
+var MAX_SPEED = 2.2;
+function registerPadVisual(h) {
+  handler = h;
+}
+function unregisterPadVisual() {
+  handler = null;
+  motionByKey.clear();
+}
+function computeImpulse(prev, vx, vy) {
+  if (!prev) return 0;
+  const dvx = vx - prev.vx;
+  const dvy = vy - prev.vy;
+  const deltaMag = Math.hypot(dvx, dvy);
+  const prevMag = Math.hypot(prev.vx, prev.vy);
+  const curMag = Math.hypot(vx, vy);
+  let turn = 0;
+  if (prevMag > 0.025 && curMag > 0.025) {
+    const dot = (prev.vx * vx + prev.vy * vy) / (prevMag * curMag);
+    turn = Math.min(1, Math.max(0, 1 - dot));
+  }
+  const deltaNorm = Math.min(deltaMag / 1.1, 1);
+  return Math.min(1, deltaNorm * 0.6 + turn * 0.4);
+}
+function updateMotion(nx, ny, key) {
+  var _a, _b;
+  const now = Date.now();
+  const prev = motionByKey.get(key);
+  let vx = (_a = prev == null ? void 0 : prev.vx) != null ? _a : 0;
+  let vy = (_b = prev == null ? void 0 : prev.vy) != null ? _b : 0;
+  if (prev) {
+    const dt = (now - prev.t) / 1e3;
+    if (dt > 0 && dt < 0.35) {
+      const rawVx = (nx - prev.nx) / dt;
+      const rawVy = (ny - prev.ny) / dt;
+      vx = prev.vx + SMOOTH * (rawVx - prev.vx);
+      vy = prev.vy + SMOOTH * (rawVy - prev.vy);
+      const mag = Math.hypot(vx, vy);
+      if (mag > MAX_SPEED) {
+        vx = vx / mag * MAX_SPEED;
+        vy = vy / mag * MAX_SPEED;
+      }
+    }
+  }
+  const impulse = computeImpulse(prev, vx, vy);
+  motionByKey.set(key, { nx, ny, t: now, vx, vy });
+  return { vx, vy, impulse };
+}
+function readStopMotion(key) {
+  var _a, _b;
+  const prev = motionByKey.get(key);
+  const vx = (_a = prev == null ? void 0 : prev.vx) != null ? _a : 0;
+  const vy = (_b = prev == null ? void 0 : prev.vy) != null ? _b : 0;
+  motionByKey.delete(key);
+  return {
+    vx,
+    vy,
+    impulse: Math.min(Math.hypot(vx, vy) / MAX_SPEED, 1)
+  };
+}
+function trackPadMotion(nx, ny, key = "default") {
+  return updateMotion(nx, ny, key);
+}
+function spawnVisualSplat(nx, ny, color, size, key = "default", opts) {
+  var _a;
+  if (!handler) return false;
+  const motion = (opts == null ? void 0 : opts.stopped) ? readStopMotion(key) : (_a = opts == null ? void 0 : opts.motion) != null ? _a : updateMotion(nx, ny, key);
+  handler({
+    x: nx,
+    y: ny,
+    dx: motion.vx,
+    dy: motion.vy,
+    color,
+    radius: size * 4e-3,
+    key,
+    impulse: motion.impulse,
+    stopped: opts == null ? void 0 : opts.stopped
+  });
+  return true;
+}
+
 // src/components/ChaosPad/helpers/spawnGlow.ts
 var spawnGlow = (container, x, y, color, size) => {
   const half = size / 2;
@@ -765,80 +851,675 @@ var spawnGlow = (container, x, y, color, size) => {
 };
 var spawnGlow_default = spawnGlow;
 
+// src/components/ChaosPad/helpers/spawnVisual.ts
+var spawnVisual = (container, nx, ny, color, size, key, opts) => {
+  if (spawnVisualSplat(nx, ny, color, size, key, opts)) return;
+  const { width, height } = container.getBoundingClientRect();
+  spawnGlow_default(container, nx * width, ny * height, color, size);
+};
+var spawnVisual_default = spawnVisual;
+
 // src/components/ChaosPad/helpers/throttledSpawn.ts
+var IMPULSE_BYPASS = 0.32;
 var createThrottledSpawn = (intervalMs, glowSize) => {
   const lastGlowTimeByKey = /* @__PURE__ */ new Map();
-  return (container, x, y, color, _type, key = "default") => {
-    var _a;
+  return (container, nx, ny, color, _type, key = "default", motion) => {
+    var _a, _b;
     const now = Date.now();
     const lastGlowTime = (_a = lastGlowTimeByKey.get(key)) != null ? _a : 0;
-    if (now - lastGlowTime < intervalMs) return;
+    const elapsed = now - lastGlowTime;
+    const impulse = (_b = motion == null ? void 0 : motion.impulse) != null ? _b : 0;
+    const forceSpawn = impulse >= IMPULSE_BYPASS;
+    if (!forceSpawn) {
+      const jittered = intervalMs * (0.75 + Math.random() * 0.55);
+      if (elapsed < jittered) return;
+      if (elapsed < intervalMs * 1.8 && Math.random() < 0.15) return;
+    }
     lastGlowTimeByKey.set(key, now);
-    spawnGlow_default(container, x, y, color, glowSize);
+    const opts = motion ? { motion } : void 0;
+    spawnVisual_default(container, nx, ny, color, glowSize, key, opts);
   };
 };
 var throttledSpawn_default = createThrottledSpawn;
 
 // src/components/ChaosPad/GlowFx.tsx
 import { useEffect as useEffect5, useMemo, useRef as useRef4 } from "react";
-var toPixel = (container, pos) => {
-  const { width, height } = container.getBoundingClientRect();
-  return {
-    x: pos.nx * width,
-    y: pos.ny * height
-  };
-};
 var LOCAL_GLOW_KEY = "__local__";
 var GlowEffect = ({ containerRef }) => {
-  const { color, pos, type, message } = useWebSocket_default();
+  const { color, message, subscribeMotion } = useWebSocket_default();
   const { glowIntervalMs, glowSize } = useChaospadConfig();
-  const posRef = useRef4(pos);
-  const typeRef = useRef4(type);
   const colorRef = useRef4(color);
-  posRef.current = pos;
-  typeRef.current = type;
   colorRef.current = color;
   const throttledSpawn = useMemo(
     () => throttledSpawn_default(glowIntervalMs, glowSize),
     [glowIntervalMs, glowSize]
   );
-  const isPointerActive = type !== "stop" && pos != null;
   useEffect5(() => {
-    if (!isPointerActive) return;
-    const tick = () => {
-      const p = posRef.current;
-      const t = typeRef.current;
-      const c = colorRef.current;
+    return subscribeMotion(({ pos, type }) => {
       const container = containerRef.current;
-      if (!p || t === "stop" || !container) return;
-      const pixel = toPixel(container, p);
-      throttledSpawn(container, pixel.x, pixel.y, c, t, LOCAL_GLOW_KEY);
-    };
-    tick();
-    const id = window.setInterval(tick, glowIntervalMs);
-    return () => window.clearInterval(id);
-  }, [isPointerActive, containerRef, throttledSpawn, glowIntervalMs]);
+      if (!pos || !container) return;
+      if (type === "stop") {
+        spawnVisual_default(
+          container,
+          pos.nx,
+          pos.ny,
+          colorRef.current,
+          glowSize,
+          LOCAL_GLOW_KEY,
+          { stopped: true }
+        );
+        return;
+      }
+      const motion = trackPadMotion(pos.nx, pos.ny, LOCAL_GLOW_KEY);
+      throttledSpawn(
+        container,
+        pos.nx,
+        pos.ny,
+        colorRef.current,
+        type,
+        LOCAL_GLOW_KEY,
+        motion
+      );
+    });
+  }, [containerRef, glowSize, subscribeMotion, throttledSpawn]);
   useEffect5(() => {
-    if (!message || message.type === "stop") return;
     const container = containerRef.current;
-    if (!container) return;
-    const { nx, ny, color: color2, type: type2, userId } = message;
-    if (!userId) return;
-    const { width, height } = container.getBoundingClientRect();
-    throttledSpawn(container, nx * width, ny * height, color2, type2, userId);
-  }, [message, containerRef, throttledSpawn]);
+    if (!message || !container || !message.userId) return;
+    if (message.type === "stop") {
+      spawnVisual_default(
+        container,
+        message.nx,
+        message.ny,
+        message.color,
+        glowSize,
+        message.userId,
+        { stopped: true }
+      );
+      return;
+    }
+    const motion = trackPadMotion(message.nx, message.ny, message.userId);
+    throttledSpawn(
+      container,
+      message.nx,
+      message.ny,
+      message.color,
+      message.type,
+      message.userId,
+      motion
+    );
+  }, [message, containerRef, glowSize, throttledSpawn]);
   return null;
 };
 var GlowFx_default = GlowEffect;
 
+// src/components/ChaosPad/webgl/glUtils.ts
+function createShader(gl, type, source) {
+  var _a;
+  const shader = gl.createShader(type);
+  if (!shader) throw new Error("Failed to create shader");
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    const log = (_a = gl.getShaderInfoLog(shader)) != null ? _a : "unknown";
+    gl.deleteShader(shader);
+    throw new Error(`Shader compile error: ${log}`);
+  }
+  return shader;
+}
+function createProgram(gl, vertexSource, fragmentSource) {
+  var _a;
+  const vs = createShader(gl, gl.VERTEX_SHADER, vertexSource);
+  const fs = createShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
+  const program = gl.createProgram();
+  if (!program) throw new Error("Failed to create program");
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.bindAttribLocation(program, 0, "aPosition");
+  gl.linkProgram(program);
+  gl.deleteShader(vs);
+  gl.deleteShader(fs);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    const log = (_a = gl.getProgramInfoLog(program)) != null ? _a : "unknown";
+    gl.deleteProgram(program);
+    throw new Error(`Program link error: ${log}`);
+  }
+  return program;
+}
+function parseHexColor(hex) {
+  const h = hex.replace("#", "");
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const n = Number.parseInt(full, 16);
+  return [(n >> 16) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
+}
+
+// src/components/ChaosPad/webgl/particleShaders.ts
+var PARTICLE_VERTEX = `#version 300 es
+precision highp float;
+
+layout(location = 0) in vec2 aPosition;
+layout(location = 1) in float aLife;
+layout(location = 2) in vec3 aColor;
+layout(location = 3) in float aSize;
+
+uniform vec2 uResolution;
+
+out float vLife;
+out vec3 vColor;
+
+void main() {
+	// aPosition.y: 0 = top, 1 = bottom (matches pointer ny)
+	vec2 clip = vec2(aPosition.x * 2.0 - 1.0, 1.0 - aPosition.y * 2.0);
+	gl_Position = vec4(clip, 0.0, 1.0);
+	vLife = aLife;
+	float lifeScale = 0.45 + 0.55 * vLife;
+	gl_PointSize = max(aSize * lifeScale * uResolution.y * 0.0028, 2.0);
+	vColor = aColor;
+}
+`;
+var PARTICLE_FRAGMENT = `#version 300 es
+precision highp float;
+
+in float vLife;
+in vec3 vColor;
+out vec4 outColor;
+
+void main() {
+	vec2 uv = gl_PointCoord - 0.5;
+	float d2 = dot(uv, uv);
+
+	float core = exp(-d2 * 12.0);
+	float halo = exp(-d2 * 4.5);
+
+	float alpha = (core * 0.62 + halo * 0.28) * vLife;
+	vec3 rgb = vColor * (0.55 + core * 0.45 + halo * 0.15);
+
+	outColor = vec4(rgb, alpha);
+}
+`;
+var FADE_VERTEX = `#version 300 es
+precision highp float;
+
+layout(location = 0) in vec2 aPosition;
+
+out vec2 vUv;
+
+void main() {
+	vUv = aPosition * 0.5 + 0.5;
+	gl_Position = vec4(aPosition, 0.0, 1.0);
+}
+`;
+var FADE_FRAGMENT = `#version 300 es
+precision highp float;
+
+uniform sampler2D uTexture;
+uniform float uFade;
+
+in vec2 vUv;
+out vec4 outColor;
+
+void main() {
+	vec4 c = texture(uTexture, vUv);
+	outColor = c * uFade;
+}
+`;
+
+// src/components/ChaosPad/webgl/ParticleSim.ts
+var MAX_PARTICLES = 16e3;
+var BURST_COUNT = 26;
+var STRIDE = 7;
+var FLOW_LERP = 0.09;
+var TRAIL_FADE = 0.968;
+var hash = (x, y) => {
+  const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return s - Math.floor(s);
+};
+var noise2 = (x, y) => {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  const ux = fx * fx * (3 - 2 * fx);
+  const uy = fy * fy * (3 - 2 * fy);
+  const a = hash(ix, iy);
+  const b = hash(ix + 1, iy);
+  const c = hash(ix, iy + 1);
+  const d = hash(ix + 1, iy + 1);
+  return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+};
+var fbm = (x, y) => {
+  let v = 0;
+  let a = 0.5;
+  let px = x;
+  let py = y;
+  for (let i = 0; i < 4; i++) {
+    v += a * noise2(px, py);
+    px *= 2.03;
+    py *= 2.03;
+    a *= 0.5;
+  }
+  return v;
+};
+var sampleFlow = (x, y, t, seed) => {
+  const s = seed * 19.17;
+  const sc = 5.5 + seed % 1 * 4;
+  const tx = t * (0.06 + seed % 0.07);
+  const ty = t * (0.055 + seed % 0.06);
+  const px = x * sc + s + tx;
+  const py = y * sc + s * 0.7 + ty;
+  const eps = 0.04;
+  const n = fbm(px, py);
+  const nx = fbm(px + eps, py) - fbm(px - eps, py);
+  const ny = fbm(px, py + eps) - fbm(px, py - eps);
+  const px2 = x * (sc * 2.1) + s * 2.3 + tx * 0.6;
+  const py2 = y * (sc * 2.1) + s * 1.1 + ty * 0.7;
+  const nx2 = fbm(px2 + eps, py2) - fbm(px2 - eps, py2);
+  const ny2 = fbm(px2, py2 + eps) - fbm(px2, py2 - eps);
+  return {
+    curlX: (ny + ny2 * 0.45) * 0.011,
+    curlY: -(nx + nx2 * 0.45) * 0.011,
+    boost: (n - 0.5) * 5e-3
+  };
+};
+var lerp = (a, b, t) => a + (b - a) * t;
+var QUAD_VERTS = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+var ParticleSim = class {
+  constructor(canvas) {
+    this.particles = [];
+    this.count = 0;
+    this.displayWidth = 1;
+    this.displayHeight = 1;
+    this.time = 0;
+    this.pending = [];
+    this.flowByKey = /* @__PURE__ */ new Map();
+    this.lastFrame = 0;
+    this.fbWidth = 0;
+    this.fbHeight = 0;
+    this.readIdx = 0;
+    const gl = canvas.getContext("webgl2", {
+      alpha: true,
+      premultipliedAlpha: false,
+      antialias: false,
+      depth: false
+    });
+    if (!gl) throw new Error("WebGL2 not supported");
+    this.gl = gl;
+    this.program = createProgram(gl, PARTICLE_VERTEX, PARTICLE_FRAGMENT);
+    this.fadeProgram = createProgram(gl, FADE_VERTEX, FADE_FRAGMENT);
+    const vao = gl.createVertexArray();
+    const buffer = gl.createBuffer();
+    if (!vao || !buffer) throw new Error("Failed to create GPU buffers");
+    this.vao = vao;
+    this.buffer = buffer;
+    this.cpuData = new Float32Array(MAX_PARTICLES * STRIDE);
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, this.cpuData.byteLength, gl.DYNAMIC_DRAW);
+    const stride = STRIDE * 4;
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, stride, 0);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 1, gl.FLOAT, false, stride, 8);
+    gl.enableVertexAttribArray(2);
+    gl.vertexAttribPointer(2, 3, gl.FLOAT, false, stride, 12);
+    gl.enableVertexAttribArray(3);
+    gl.vertexAttribPointer(3, 1, gl.FLOAT, false, stride, 24);
+    gl.bindVertexArray(null);
+    const quadVao = gl.createVertexArray();
+    const quadBuffer = gl.createBuffer();
+    if (!quadVao || !quadBuffer) throw new Error("Failed to create quad buffers");
+    this.quadVao = quadVao;
+    this.quadBuffer = quadBuffer;
+    gl.bindVertexArray(quadVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, QUAD_VERTS, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 8, 0);
+    gl.bindVertexArray(null);
+    this.fbos = [gl.createFramebuffer(), gl.createFramebuffer()];
+    this.textures = [gl.createTexture(), gl.createTexture()];
+    this.lastFrame = performance.now();
+  }
+  resize(displayWidth, displayHeight) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.displayWidth = Math.max(1, Math.floor(displayWidth * dpr));
+    this.displayHeight = Math.max(1, Math.floor(displayHeight * dpr));
+    if (this.displayWidth !== this.fbWidth || this.displayHeight !== this.fbHeight) {
+      this.fbWidth = this.displayWidth;
+      this.fbHeight = this.displayHeight;
+      this.initFramebuffers();
+    }
+  }
+  pushSplat(s) {
+    this.pending.push(s);
+  }
+  step() {
+    const now = performance.now();
+    const dt = Math.min(0.04, Math.max(8e-3, (now - this.lastFrame) / 1e3));
+    this.lastFrame = now;
+    this.time += dt;
+    for (const s of this.pending) this.spawnBurst(s);
+    this.pending.length = 0;
+    this.update(dt);
+    this.draw();
+  }
+  destroy() {
+    const gl = this.gl;
+    gl.deleteBuffer(this.buffer);
+    gl.deleteBuffer(this.quadBuffer);
+    gl.deleteVertexArray(this.vao);
+    gl.deleteVertexArray(this.quadVao);
+    gl.deleteProgram(this.program);
+    gl.deleteProgram(this.fadeProgram);
+    for (const fb of this.fbos) gl.deleteFramebuffer(fb);
+    for (const tex of this.textures) gl.deleteTexture(tex);
+  }
+  initFramebuffers() {
+    const gl = this.gl;
+    const { fbWidth: w, fbHeight: h } = this;
+    for (let i = 0; i < 2; i++) {
+      gl.bindTexture(gl.TEXTURE_2D, this.textures[i]);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbos[i]);
+      gl.framebufferTexture2D(
+        gl.FRAMEBUFFER,
+        gl.COLOR_ATTACHMENT0,
+        gl.TEXTURE_2D,
+        this.textures[i],
+        0
+      );
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+  }
+  smoothFlow(key, dx, dy) {
+    var _a;
+    const speed = Math.hypot(dx, dy);
+    const prev = (_a = this.flowByKey.get(key)) != null ? _a : { x: 0, y: 0, speed: 0 };
+    let tx = prev.x;
+    let ty = prev.y;
+    if (speed > 0.02) {
+      tx = dx / speed;
+      ty = dy / speed;
+    }
+    const flow = {
+      x: lerp(prev.x, tx, FLOW_LERP),
+      y: lerp(prev.y, ty, FLOW_LERP),
+      speed: lerp(prev.speed, Math.min(speed, 2.2), FLOW_LERP)
+    };
+    const mag = Math.hypot(flow.x, flow.y);
+    if (mag > 1e-3) {
+      flow.x /= mag;
+      flow.y /= mag;
+    }
+    this.flowByKey.set(key, flow);
+    return flow;
+  }
+  spawnBurst(s) {
+    var _a, _b;
+    const [cr, cg, cb] = parseHexColor(s.color);
+    const key = (_a = s.key) != null ? _a : "__local__";
+    const stopped = s.stopped === true;
+    const impulse = (_b = s.impulse) != null ? _b : 0;
+    const touchSpeed = Math.hypot(s.dx, s.dy);
+    const hasInertia = touchSpeed > 0.015 || stopped || impulse > 0.08;
+    const touchDirX = touchSpeed > 1e-4 ? s.dx / touchSpeed : 0;
+    const touchDirY = touchSpeed > 1e-4 ? s.dy / touchSpeed : 0;
+    const speedNorm = Math.min(touchSpeed / MAX_SPEED, 1);
+    const motionBoost = Math.min(
+      speedNorm * 0.7 + impulse * 0.45 + (stopped ? speedNorm * 0.25 : 0),
+      1
+    );
+    const flow = this.smoothFlow(key, s.dx, s.dy);
+    const isSwipe = hasInertia && (touchSpeed > 0.022 || impulse > 0.14 || stopped);
+    let dirX = touchDirX || flow.x;
+    let dirY = touchDirY || flow.y;
+    if (!isSwipe) {
+      dirX = 0;
+      dirY = 0;
+    }
+    const perpX = -dirY;
+    const perpY = dirX;
+    const swipe = Math.min(Math.max(touchSpeed, flow.speed) * 0.45, 1);
+    const radiusJitter = 0.92 + Math.random() * 0.16;
+    const baseRadius = (stopped ? 0.042 + speedNorm * 0.035 : isSwipe ? 0.046 + swipe * 0.08 : 0.044) * radiusJitter;
+    const stretch = isSwipe ? 1 + swipe * (0.18 + motionBoost * 0.14 + Math.random() * 0.08) : 1;
+    const burstCount = Math.round(
+      (stopped ? BURST_COUNT * (0.75 + speedNorm * 0.35) : isSwipe ? BURST_COUNT + swipe * 10 + impulse * 4 : BURST_COUNT) * (0.88 + Math.random() * 0.22)
+    );
+    const inertiaBase = Math.min(
+      touchSpeed * 0.022 + impulse * 0.06 + (stopped ? speedNorm * 0.035 : 0),
+      0.11
+    );
+    const inheritScale = 6e-3 + speedNorm * 9e-3 + impulse * 0.012 + (stopped ? speedNorm * 0.014 : 0);
+    const burstSeed = Math.random() * 1e3;
+    for (let i = 0; i < burstCount; i++) {
+      if (this.particles.length >= MAX_PARTICLES) {
+        this.particles.shift();
+      }
+      const pSeed = burstSeed + i * 1.618 + Math.random() * 7;
+      const angle = Math.random() * Math.PI * 2;
+      const gauss = (Math.random() + Math.random() + Math.random()) / 3;
+      const ring = Math.sqrt(Math.random());
+      const dist = (gauss * gauss * 0.62 + ring * 0.38) * baseRadius;
+      let ox = Math.cos(angle) * dist;
+      let oy = Math.sin(angle) * dist;
+      if (isSwipe) {
+        const along = ox * dirX + oy * dirY;
+        const perp = ox * perpX + oy * perpY;
+        const perpScale = stopped || impulse > 0.35 ? 0.72 + Math.random() * 0.2 : 0.88 + Math.random() * 0.12;
+        ox = dirX * along * stretch + perpX * perp * perpScale;
+        oy = dirY * along * stretch + perpY * perp * perpScale;
+      }
+      const n = fbm(s.x * 14 + ox * 22 + pSeed, s.y * 14 + oy * 22 + pSeed * 0.7);
+      ox += (n - 0.5) * baseRadius * 0.18;
+      oy += (fbm(s.y * 14 + pSeed, s.x * 14 + pSeed) - 0.5) * baseRadius * 0.18;
+      const omag = Math.hypot(ox, oy) || 1e-4;
+      const outX = ox / omag;
+      const outY = oy / omag;
+      const spd = 0.012 + Math.random() * 0.018 + swipe * (0.022 + Math.random() * 0.018) + dist * (0.12 + Math.random() * 0.1);
+      const flowMix = isSwipe ? 0.22 + motionBoost * 0.28 + Math.random() * 0.08 : 0;
+      let vx = (outX * (1 - flowMix) + dirX * flowMix) * spd + (Math.random() - 0.5) * 5e-3;
+      let vy = (outY * (1 - flowMix) + dirY * flowMix) * spd + (Math.random() - 0.5) * 5e-3;
+      if (hasInertia) {
+        const alongBias = 0.65 + Math.random() * 0.35;
+        vx += touchDirX * inertiaBase * alongBias;
+        vy += touchDirY * inertiaBase * alongBias;
+        if (touchSpeed > 0.012 || stopped) {
+          const inherit = inheritScale * (0.75 + Math.random() * 0.35);
+          vx += s.dx * inherit;
+          vy += s.dy * inherit;
+        }
+      }
+      this.particles.push({
+        x: s.x + ox,
+        y: s.y + oy,
+        vx,
+        vy,
+        life: 1,
+        maxLife: 1.2 + motionBoost * 0.45 + (stopped ? 0.35 : 0) + Math.random() * 1,
+        r: cr + (Math.random() - 0.5) * 0.04,
+        g: cg + (Math.random() - 0.5) * 0.04,
+        b: cb + (Math.random() - 0.5) * 0.04,
+        size: 0.78 + Math.random() * 0.72,
+        flowX: dirX || flow.x,
+        flowY: dirY || flow.y,
+        seed: pSeed,
+        drag: 0.975 + Math.random() * 0.012
+      });
+    }
+  }
+  update(dt) {
+    const alive = [];
+    const t = this.time;
+    const subSteps = 2;
+    const subDt = dt / subSteps;
+    for (const p of this.particles) {
+      for (let s = 0; s < subSteps; s++) {
+        const field = sampleFlow(p.x, p.y, t + s * subDt * 0.5, p.seed);
+        const vmag = Math.hypot(p.vx, p.vy);
+        if (vmag > 4e-4) {
+          const blend = Math.min(subDt * 1.1, 0.015);
+          p.flowX = lerp(p.flowX, p.vx / vmag, blend);
+          p.flowY = lerp(p.flowY, p.vy / vmag, blend);
+        }
+        p.vx += field.curlX + p.flowX * field.boost;
+        p.vy += field.curlY + p.flowY * field.boost;
+        p.x += p.vx * subDt;
+        p.y += p.vy * subDt;
+        const lifeDrag = 1 - p.life;
+        p.vx *= p.drag - lifeDrag * 15e-4;
+        p.vy *= p.drag - lifeDrag * 15e-4;
+      }
+      p.life -= dt / p.maxLife;
+      if (p.life > 0 && p.x > -0.08 && p.x < 1.08 && p.y > -0.08 && p.y < 1.08) {
+        alive.push(p);
+      }
+    }
+    this.particles = alive;
+  }
+  draw() {
+    const gl = this.gl;
+    const { displayWidth: w, displayHeight: h } = this;
+    gl.viewport(0, 0, w, h);
+    const writeIdx = 1 - this.readIdx;
+    const readTex = this.textures[this.readIdx];
+    const writeFbo = this.fbos[writeIdx];
+    gl.bindFramebuffer(gl.FRAMEBUFFER, writeFbo);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND);
+    gl.useProgram(this.fadeProgram);
+    gl.bindVertexArray(this.quadVao);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, readTex);
+    gl.uniform1i(gl.getUniformLocation(this.fadeProgram, "uTexture"), 0);
+    gl.uniform1f(
+      gl.getUniformLocation(this.fadeProgram, "uFade"),
+      TRAIL_FADE
+    );
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    this.count = this.particles.length;
+    if (this.count > 0) {
+      const data = this.cpuData;
+      for (let i = 0; i < this.count; i++) {
+        const p = this.particles[i];
+        const o = i * STRIDE;
+        const t = p.life;
+        const fade = t * t * (3 - 2 * t);
+        data[o] = p.x;
+        data[o + 1] = p.y;
+        data[o + 2] = fade;
+        data[o + 3] = p.r;
+        data[o + 4] = p.g;
+        data[o + 5] = p.b;
+        data[o + 6] = p.size;
+      }
+      gl.useProgram(this.program);
+      gl.bindVertexArray(this.vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+      gl.bufferSubData(
+        gl.ARRAY_BUFFER,
+        0,
+        data.subarray(0, this.count * STRIDE)
+      );
+      gl.uniform2f(
+        gl.getUniformLocation(this.program, "uResolution"),
+        w,
+        h
+      );
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      gl.drawArrays(gl.POINTS, 0, this.count);
+    }
+    gl.disable(gl.BLEND);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND);
+    gl.useProgram(this.fadeProgram);
+    gl.bindVertexArray(this.quadVao);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.textures[writeIdx]);
+    gl.uniform1i(gl.getUniformLocation(this.fadeProgram, "uTexture"), 0);
+    gl.uniform1f(gl.getUniformLocation(this.fadeProgram, "uFade"), 1);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.disable(gl.BLEND);
+    this.readIdx = writeIdx;
+  }
+};
+
+// src/components/ChaosPad/PadGlCanvas.tsx
+import { useEffect as useEffect6, useRef as useRef5 } from "react";
+import { jsx as jsx3 } from "react/jsx-runtime";
+function PadGlCanvas({ containerRef }) {
+  const canvasRef = useRef5(null);
+  const simRef = useRef5(null);
+  const rafRef = useRef5(0);
+  useEffect6(() => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+    let sim;
+    try {
+      sim = new ParticleSim(canvas);
+    } catch (err) {
+      console.warn(
+        "[chaospad] webgl particles init failed, falling back to css",
+        err
+      );
+      return;
+    }
+    simRef.current = sim;
+    const resize = () => {
+      const { width, height } = container.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.max(1, Math.floor(width * dpr));
+      canvas.height = Math.max(1, Math.floor(height * dpr));
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      sim.resize(width, height);
+    };
+    registerPadVisual((splat) => sim.pushSplat(splat));
+    const ro = new ResizeObserver(resize);
+    ro.observe(container);
+    resize();
+    const loop = () => {
+      sim.step();
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      unregisterPadVisual();
+      ro.disconnect();
+      sim.destroy();
+      simRef.current = null;
+    };
+  }, [containerRef]);
+  return /* @__PURE__ */ jsx3(
+    "canvas",
+    {
+      ref: canvasRef,
+      className: "chaospad-gl-canvas",
+      "aria-hidden": "true"
+    }
+  );
+}
+
 // src/components/ChaosPad/ChaosPad.tsx
-import { useRef as useRef5 } from "react";
-import { jsx as jsx3, jsxs } from "react/jsx-runtime";
+import { useRef as useRef6 } from "react";
+import { jsx as jsx4, jsxs } from "react/jsx-runtime";
 function ChaosPad({ className, style }) {
-  const { pointerPassThrough } = useChaospadConfig();
-  const rootRef = useRef5(null);
-  const surfaceRef = useRef5(null);
-  const glowContainerRef = useRef5(null);
+  const { pointerPassThrough, visualMode } = useChaospadConfig();
+  const rootRef = useRef6(null);
+  const surfaceRef = useRef6(null);
+  const glowContainerRef = useRef6(null);
   useAudioUnlock();
   useChaosAudio();
   useChaosWebSocket();
@@ -849,9 +1530,9 @@ function ChaosPad({ className, style }) {
     className
   ].filter(Boolean).join(" ");
   return /* @__PURE__ */ jsxs("div", { ref: rootRef, className: rootClass, style, children: [
-    /* @__PURE__ */ jsx3("div", { ref: surfaceRef, className: "chaospad-surface", "aria-hidden": "true" }),
-    /* @__PURE__ */ jsx3("div", { ref: glowContainerRef, className: "chaospad-glow-layer" }),
-    /* @__PURE__ */ jsx3(GlowFx_default, { containerRef: glowContainerRef })
+    /* @__PURE__ */ jsx4("div", { ref: surfaceRef, className: "chaospad-surface", "aria-hidden": "true" }),
+    /* @__PURE__ */ jsx4("div", { ref: glowContainerRef, className: "chaospad-glow-layer", children: visualMode === "webgl" && /* @__PURE__ */ jsx4(PadGlCanvas, { containerRef: glowContainerRef }) }),
+    /* @__PURE__ */ jsx4(GlowFx_default, { containerRef: glowContainerRef })
   ] });
 }
 
@@ -865,11 +1546,11 @@ var colors = [
 ];
 var getColorForUser = (id) => {
   if (!id) return void 0;
-  let hash = 0;
+  let hash2 = 0;
   for (let i = 0; i < id.length; i++) {
-    hash = id.charCodeAt(i) + ((hash << 5) - hash);
+    hash2 = id.charCodeAt(i) + ((hash2 << 5) - hash2);
   }
-  const index = Math.abs(hash) % colors.length;
+  const index = Math.abs(hash2) % colors.length;
   return colors[index];
 };
 var getUserId = () => {
@@ -940,27 +1621,27 @@ function buildWsPayload({
 }
 
 // src/components/WsContext/WsContextProvider.tsx
-import { useCallback as useCallback2, useEffect as useEffect6, useRef as useRef6, useState as useState3 } from "react";
-import { jsx as jsx4 } from "react/jsx-runtime";
+import { useCallback as useCallback2, useEffect as useEffect7, useRef as useRef7, useState as useState3 } from "react";
+import { jsx as jsx5 } from "react/jsx-runtime";
 var RECONNECT_MS = 1500;
 var WebSocketProvider = ({ children }) => {
   const { wsUrl, userId: configUserId } = useChaospadConfig();
   const [pos, setPos] = useState3(void 0);
   const [type, setType] = useState3("stop");
-  const wsRef = useRef6(null);
-  const userIdRef = useRef6(configUserId != null ? configUserId : getUserId());
+  const wsRef = useRef7(null);
+  const userIdRef = useRef7(configUserId != null ? configUserId : getUserId());
   const userId = userIdRef.current;
   const color = getColorForUser(userId) || colors[0];
   const [message, setMessage] = useState3(void 0);
-  const messageSeqRef = useRef6(0);
-  const typeRef = useRef6(type);
-  const posRef = useRef6(pos);
-  const colorRef = useRef6(color);
+  const messageSeqRef = useRef7(0);
+  const typeRef = useRef7(type);
+  const posRef = useRef7(pos);
+  const colorRef = useRef7(color);
   typeRef.current = type;
   posRef.current = pos;
   colorRef.current = color;
-  const motionListenersRef = useRef6(/* @__PURE__ */ new Set());
-  const pendingPayloadRef = useRef6(null);
+  const motionListenersRef = useRef7(/* @__PURE__ */ new Set());
+  const pendingPayloadRef = useRef7(null);
   const sendNow = () => {
     const ws = wsRef.current;
     if (!ws) return;
@@ -979,7 +1660,7 @@ var WebSocketProvider = ({ children }) => {
       pendingPayloadRef.current = payload;
     }
   };
-  const sendNowRef = useRef6(sendNow);
+  const sendNowRef = useRef7(sendNow);
   sendNowRef.current = sendNow;
   const emitMotion = useCallback2((nextPos, nextType) => {
     posRef.current = nextPos;
@@ -997,7 +1678,7 @@ var WebSocketProvider = ({ children }) => {
       motionListenersRef.current.delete(listener);
     };
   }, []);
-  useEffect6(() => {
+  useEffect7(() => {
     let alive = true;
     let reconnectTimer;
     let ws = null;
@@ -1040,7 +1721,7 @@ var WebSocketProvider = ({ children }) => {
       wsRef.current = null;
     };
   }, [wsUrl]);
-  return /* @__PURE__ */ jsx4(
+  return /* @__PURE__ */ jsx5(
     WebSocketContext.Provider,
     {
       value: {
@@ -1123,7 +1804,15 @@ var CHAOSPAD_CSS = `
 .chaospad-glow-layer {
 	position: absolute;
 	inset: 0;
-	overflow: visible;
+	overflow: hidden;
+	pointer-events: none;
+	z-index: 1;
+}
+
+.chaospad-gl-canvas {
+	position: absolute;
+	inset: 0;
+	display: block;
 	pointer-events: none;
 }
 `;
@@ -1137,13 +1826,13 @@ function injectChaospadStyles() {
 }
 
 // src/Chaospad.tsx
-import { useEffect as useEffect7 } from "react";
-import { jsx as jsx5 } from "react/jsx-runtime";
+import { useEffect as useEffect8 } from "react";
+import { jsx as jsx6 } from "react/jsx-runtime";
 function Chaospad({ config, className, style }) {
-  useEffect7(() => {
+  useEffect8(() => {
     injectChaospadStyles();
   }, []);
-  return /* @__PURE__ */ jsx5(ChaospadConfigProvider, { config, children: /* @__PURE__ */ jsx5(WsContextProvider_default, { children: /* @__PURE__ */ jsx5(AudioEngineProvider, { children: /* @__PURE__ */ jsx5(ChaosPad, { className, style }) }) }) });
+  return /* @__PURE__ */ jsx6(ChaospadConfigProvider, { config, children: /* @__PURE__ */ jsx6(WsContextProvider_default, { children: /* @__PURE__ */ jsx6(AudioEngineProvider, { children: /* @__PURE__ */ jsx6(ChaosPad, { className, style }) }) }) });
 }
 var Chaospad_default = Chaospad;
 export {

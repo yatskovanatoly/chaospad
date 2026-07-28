@@ -6,6 +6,7 @@ import { useChaosWebSocket } from './hooks/useChaosWs'
 import { useAudioUnlock } from './hooks/useAudioUnlock'
 import { useGlobalPointerPad } from './hooks/useGlobalPointerPad'
 import GlowEffect from './GlowFx'
+import PadGlCanvas from './PadGlCanvas'
 import { useRef, type CSSProperties } from 'react'
 
 type ChaosPadProps = {
@@ -14,7 +15,7 @@ type ChaosPadProps = {
 }
 
 export default function ChaosPad({ className, style }: ChaosPadProps) {
-	const { pointerPassThrough } = useChaospadConfig()
+	const { pointerPassThrough, visualMode } = useChaospadConfig()
 	const rootRef = useRef<HTMLDivElement>(null)
 	const surfaceRef = useRef<HTMLDivElement>(null)
 	const glowContainerRef = useRef<HTMLDivElement>(null)
@@ -35,7 +36,11 @@ export default function ChaosPad({ className, style }: ChaosPadProps) {
 	return (
 		<div ref={rootRef} className={rootClass} style={style}>
 			<div ref={surfaceRef} className='chaospad-surface' aria-hidden='true' />
-			<div ref={glowContainerRef} className='chaospad-glow-layer' />
+			<div ref={glowContainerRef} className='chaospad-glow-layer'>
+				{visualMode === 'webgl' && (
+					<PadGlCanvas containerRef={glowContainerRef} />
+				)}
+			</div>
 			<GlowEffect containerRef={glowContainerRef} />
 		</div>
 	)

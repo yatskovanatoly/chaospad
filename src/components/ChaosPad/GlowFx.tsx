@@ -2,32 +2,21 @@
 
 import { useChaospadConfig } from '@/context/ChaospadConfigContext'
 import createThrottledSpawn from '@/components/ChaosPad/helpers/throttledSpawn'
-import type { Position } from '@/type'
+import { trackPadMotion } from '@/components/ChaosPad/helpers/padVisualBridge'
+import spawnVisual from '@/components/ChaosPad/helpers/spawnVisual'
+import useWebSocket from '@/components/WsContext/useWebSocket'
 import React, { useEffect, useMemo, useRef } from 'react'
-import useWebSocket from '../WsContext/useWebSocket'
 
 type GlowEffectProps = {
 	containerRef: React.RefObject<HTMLDivElement | null>
 }
 
-const toPixel = (container: HTMLElement, pos: Position) => {
-	const { width, height } = container.getBoundingClientRect()
-	return {
-		x: pos.nx * width,
-		y: pos.ny * height,
-	}
-}
-
 const LOCAL_GLOW_KEY = '__local__'
 
 const GlowEffect: React.FC<GlowEffectProps> = ({ containerRef }) => {
-	const { color, pos, type, message } = useWebSocket()
+	const { color, message, subscribeMotion } = useWebSocket()
 	const { glowIntervalMs, glowSize } = useChaospadConfig()
-	const posRef = useRef(pos)
-	const typeRef = useRef(type)
 	const colorRef = useRef(color)
-	posRef.current = pos
-	typeRef.current = type
 	colorRef.current = color
 
 	const throttledSpawn = useMemo(
@@ -35,36 +24,65 @@ const GlowEffect: React.FC<GlowEffectProps> = ({ containerRef }) => {
 		[glowIntervalMs, glowSize],
 	)
 
-	const isPointerActive = type !== 'stop' && pos != null
-
-	// Interval only while pointer is held — do not restart on every pos change.
 	useEffect(() => {
-		if (!isPointerActive) return
-
-		const tick = () => {
-			const p = posRef.current
-			const t = typeRef.current
-			const c = colorRef.current
+		return subscribeMotion(({ pos, type }) => {
 			const container = containerRef.current
-			if (!p || t === 'stop' || !container) return
-			const pixel = toPixel(container, p)
-			throttledSpawn(container, pixel.x, pixel.y, c, t, LOCAL_GLOW_KEY)
+			if (!pos || !container) return
+
+			if (type === 'stop') {
+				spawnVisual(
+					container,
+					pos.nx,
+					pos.ny,
+					colorRef.current,
+					glowSize,
+					LOCAL_GLOW_KEY,
+					{ stopped: true },
+				)
+				return
+			}
+
+			const motion = trackPadMotion(pos.nx, pos.ny, LOCAL_GLOW_KEY)
+			throttledSpawn(
+				container,
+				pos.nx,
+				pos.ny,
+				colorRef.current,
+				type,
+				LOCAL_GLOW_KEY,
+				motion,
+			)
+		})
+	}, [containerRef, glowSize, subscribeMotion, throttledSpawn])
+
+	useEffect(() => {
+		const container = containerRef.current
+		if (!message || !container || !message.userId) return
+
+		if (message.type === 'stop') {
+			spawnVisual(
+				container,
+				message.nx,
+				message.ny,
+				message.color,
+				glowSize,
+				message.userId,
+				{ stopped: true },
+			)
+			return
 		}
 
-		tick()
-		const id = window.setInterval(tick, glowIntervalMs)
-		return () => window.clearInterval(id)
-	}, [isPointerActive, containerRef, throttledSpawn, glowIntervalMs])
-
-	useEffect(() => {
-		if (!message || message.type === 'stop') return
-		const container = containerRef.current
-		if (!container) return
-		const { nx, ny, color, type, userId } = message
-		if (!userId) return
-		const { width, height } = container.getBoundingClientRect()
-		throttledSpawn(container, nx * width, ny * height, color, type, userId)
-	}, [message, containerRef, throttledSpawn])
+		const motion = trackPadMotion(message.nx, message.ny, message.userId)
+		throttledSpawn(
+			container,
+			message.nx,
+			message.ny,
+			message.color,
+			message.type,
+			message.userId,
+			motion,
+		)
+	}, [message, containerRef, glowSize, throttledSpawn])
 
 	return null
 }

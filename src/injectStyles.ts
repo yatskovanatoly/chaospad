@@ -60,7 +60,15 @@ const CHAOSPAD_CSS = `
 .chaospad-glow-layer {
 	position: absolute;
 	inset: 0;
-	overflow: visible;
+	overflow: hidden;
+	pointer-events: none;
+	z-index: 1;
+}
+
+.chaospad-gl-canvas {
+	position: absolute;
+	inset: 0;
+	display: block;
 	pointer-events: none;
 }
 `
