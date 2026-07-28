@@ -1,19 +1,15 @@
 'use client'
 
-import {
-	registerPadVisual,
-	unregisterPadVisual,
-} from '@/components/ChaosPad/helpers/padVisualBridge'
+import { registerVisual, unregisterVisual } from '@/components/ChaosPad/visual/bridge'
 import { ParticleSim } from '@/components/ChaosPad/webgl/ParticleSim'
 import { useEffect, useRef } from 'react'
 
-type PadGlCanvasProps = {
+type Props = {
 	containerRef: React.RefObject<HTMLDivElement | null>
 }
 
-export default function PadGlCanvas({ containerRef }: PadGlCanvasProps) {
+export default function PadGlCanvas({ containerRef }: Props) {
 	const canvasRef = useRef<HTMLCanvasElement>(null)
-	const simRef = useRef<ParticleSim | null>(null)
 	const rafRef = useRef(0)
 
 	useEffect(() => {
@@ -25,14 +21,9 @@ export default function PadGlCanvas({ containerRef }: PadGlCanvasProps) {
 		try {
 			sim = new ParticleSim(canvas)
 		} catch (err) {
-			console.warn(
-				'[chaospad] webgl particles init failed, falling back to css',
-				err,
-			)
+			console.warn('[chaospad] webgl init failed', err)
 			return
 		}
-
-		simRef.current = sim
 
 		const resize = () => {
 			const { width, height } = container.getBoundingClientRect()
@@ -44,8 +35,7 @@ export default function PadGlCanvas({ containerRef }: PadGlCanvasProps) {
 			sim.resize(width, height)
 		}
 
-		registerPadVisual((splat) => sim.pushSplat(splat))
-
+		registerVisual((splat) => sim.pushSplat(splat))
 		const ro = new ResizeObserver(resize)
 		ro.observe(container)
 		resize()
@@ -58,18 +48,13 @@ export default function PadGlCanvas({ containerRef }: PadGlCanvasProps) {
 
 		return () => {
 			cancelAnimationFrame(rafRef.current)
-			unregisterPadVisual()
+			unregisterVisual()
 			ro.disconnect()
 			sim.destroy()
-			simRef.current = null
 		}
 	}, [containerRef])
 
 	return (
-		<canvas
-			ref={canvasRef}
-			className='chaospad-gl-canvas'
-			aria-hidden='true'
-		/>
+		<canvas ref={canvasRef} className='chaospad-gl-canvas' aria-hidden='true' />
 	)
 }

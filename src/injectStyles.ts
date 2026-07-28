@@ -1,33 +1,6 @@
 const STYLE_ID = 'chaospad-styles'
 
 const CHAOSPAD_CSS = `
-@keyframes glow-effect {
-	0% {
-		transform: scale(0);
-		opacity: 1;
-	}
-	50% {
-		transform: scale(1.5);
-		opacity: 0.6;
-	}
-	100% {
-		transform: scale(3);
-		opacity: 0;
-	}
-}
-
-.chaospad-glow {
-	position: absolute;
-	border-radius: 50%;
-	border-width: 4px;
-	border-style: solid;
-	opacity: 0.6;
-	pointer-events: none;
-	transform-origin: center;
-	animation: glow-effect 0.5s ease-in-out;
-	filter: blur(2px);
-}
-
 .chaospad-root {
 	position: fixed;
 	inset: 0;

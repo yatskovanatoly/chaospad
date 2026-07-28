@@ -5,7 +5,7 @@ import { useChaosAudio } from './hooks/useChaosAudio'
 import { useChaosWebSocket } from './hooks/useChaosWs'
 import { useAudioUnlock } from './hooks/useAudioUnlock'
 import { useGlobalPointerPad } from './hooks/useGlobalPointerPad'
-import GlowEffect from './GlowFx'
+import { usePadVisual } from './hooks/usePadVisual'
 import PadGlCanvas from './PadGlCanvas'
 import { useRef, type CSSProperties } from 'react'
 
@@ -15,15 +15,16 @@ type ChaosPadProps = {
 }
 
 export default function ChaosPad({ className, style }: ChaosPadProps) {
-	const { pointerPassThrough, visualMode } = useChaospadConfig()
+	const { pointerPassThrough } = useChaospadConfig()
 	const rootRef = useRef<HTMLDivElement>(null)
 	const surfaceRef = useRef<HTMLDivElement>(null)
-	const glowContainerRef = useRef<HTMLDivElement>(null)
+	const visualRef = useRef<HTMLDivElement>(null)
 
 	useAudioUnlock()
 	useChaosAudio()
 	useChaosWebSocket()
 	useGlobalPointerPad(rootRef, surfaceRef, pointerPassThrough)
+	usePadVisual()
 
 	const rootClass = [
 		'chaospad-root',
@@ -36,12 +37,9 @@ export default function ChaosPad({ className, style }: ChaosPadProps) {
 	return (
 		<div ref={rootRef} className={rootClass} style={style}>
 			<div ref={surfaceRef} className='chaospad-surface' aria-hidden='true' />
-			<div ref={glowContainerRef} className='chaospad-glow-layer'>
-				{visualMode === 'webgl' && (
-					<PadGlCanvas containerRef={glowContainerRef} />
-				)}
+			<div ref={visualRef} className='chaospad-glow-layer'>
+				<PadGlCanvas containerRef={visualRef} />
 			</div>
-			<GlowEffect containerRef={glowContainerRef} />
 		</div>
 	)
 }

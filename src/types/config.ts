@@ -19,10 +19,6 @@ export type ChaospadConfig = {
 	userId?: string
 	/** Glow spawn interval while pointer is held, ms. Default: 50 */
 	glowIntervalMs?: number
-	/** Glow circle diameter in px. Default: 50 */
-	glowSize?: number
-	/** Touch visual mode. Default: `'webgl'` */
-	visualMode?: 'css' | 'webgl'
 	/**
 	 * React to touches anywhere on the page without blocking clicks on UI below.
 	 * Uses document capture listeners + `pointer-events: none` on the pad layer.
@@ -98,8 +94,6 @@ export const DEFAULT_CHAOSPAD_CONFIG: Required<
 	remoteRelease: 0.5,
 	quantize: 'chromatic',
 	glowIntervalMs: 50,
-	glowSize: 50,
-	visualMode: 'webgl',
 	pointerPassThrough: true,
 }
 
@@ -122,8 +116,6 @@ export function resolveChaospadConfig(
 		userId: config?.userId,
 		glowIntervalMs:
 			config?.glowIntervalMs ?? DEFAULT_CHAOSPAD_CONFIG.glowIntervalMs,
-		glowSize: config?.glowSize ?? DEFAULT_CHAOSPAD_CONFIG.glowSize,
-		visualMode: config?.visualMode ?? DEFAULT_CHAOSPAD_CONFIG.visualMode,
 		pointerPassThrough:
 			config?.pointerPassThrough ??
 			DEFAULT_CHAOSPAD_CONFIG.pointerPassThrough,
