@@ -11,8 +11,8 @@ void main() {
 	vec2 clip = vec2(aPosition.x * 2.0 - 1.0, 1.0 - aPosition.y * 2.0);
 	gl_Position = vec4(clip, 0.0, 1.0);
 	vLife = aLife;
-	float lifeScale = 0.45 + 0.55 * vLife;
-	gl_PointSize = max(aSize * lifeScale * uResolution.y * 0.0028, 2.0);
+	float lifeScale = 0.6 + 0.4 * vLife;
+	gl_PointSize = max(aSize * lifeScale * uResolution.y * 0.0075, 6.0);
 	vColor = aColor;
 }
 `
@@ -25,10 +25,14 @@ out vec4 outColor;
 void main() {
 	vec2 uv = gl_PointCoord - 0.5;
 	float d2 = dot(uv, uv);
-	float core = exp(-d2 * 12.0);
-	float halo = exp(-d2 * 4.5);
-	float alpha = (core * 0.62 + halo * 0.28) * vLife;
-	outColor = vec4(vColor * (0.55 + core * 0.45 + halo * 0.15), alpha);
+	float core = exp(-d2 * 16.0);
+	float halo = exp(-d2 * 5.5);
+	float energy = (core * 0.9 + halo * 0.1) * pow(vLife, 0.82);
+	float luma = dot(vColor, vec3(0.299, 0.587, 0.114));
+	vec3 col = mix(vec3(luma), vColor, 1.35);
+	float alpha = energy * 0.88;
+	vec3 rgb = col * energy * 0.92;
+	outColor = vec4(rgb, alpha);
 }
 `
 

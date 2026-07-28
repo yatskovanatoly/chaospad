@@ -17,7 +17,7 @@ export function makeParticle({ s, m, flow, rgb, seed, i }: Ctx): Particle {
 	const pSeed = seed + i * 1.618 + Math.random() * 7
 	const gauss = (Math.random() + Math.random() + Math.random()) / 3
 	const dist =
-		(gauss * gauss * 0.62 + Math.sqrt(Math.random()) * 0.38) * m.baseRadius
+		(gauss * gauss * 0.42 + Math.sqrt(Math.random()) * 0.58) * m.baseRadius
 
 	const angle = Math.random() * Math.PI * 2
 	let ox = Math.cos(angle) * dist
@@ -34,8 +34,8 @@ export function makeParticle({ s, m, flow, rgb, seed, i }: Ctx): Particle {
 		oy = m.dirY * along * m.stretch + m.perpY * perp * perpScale
 	}
 
-	ox += (fbm(s.x * 14 + ox * 22 + pSeed, s.y * 14 + oy * 22 + pSeed * 0.7) - 0.5) * m.baseRadius * 0.18
-	oy += (fbm(s.y * 14 + pSeed, s.x * 14 + pSeed) - 0.5) * m.baseRadius * 0.18
+	ox += (fbm(s.x * 14 + ox * 22 + pSeed, s.y * 14 + oy * 22 + pSeed * 0.7) - 0.5) * m.baseRadius * 0.28
+	oy += (fbm(s.y * 14 + pSeed, s.x * 14 + pSeed) - 0.5) * m.baseRadius * 0.28
 
 	const omag = Math.hypot(ox, oy) || 1e-4
 	const outX = ox / omag
@@ -71,10 +71,10 @@ export function makeParticle({ s, m, flow, rgb, seed, i }: Ctx): Particle {
 		vy,
 		life: 1,
 		maxLife: 1.2 + m.motionBoost * 0.45 + (m.stopped ? 0.35 : 0) + Math.random(),
-		r: cr + (Math.random() - 0.5) * 0.04,
-		g: cg + (Math.random() - 0.5) * 0.04,
-		b: cb + (Math.random() - 0.5) * 0.04,
-		size: 0.78 + Math.random() * 0.72,
+		r: cr * (0.96 + Math.random() * 0.08),
+		g: cg * (0.96 + Math.random() * 0.08),
+		b: cb * (0.96 + Math.random() * 0.08),
+		size: 1.8 + Math.random() * 1.4,
 		flowX: m.dirX || flow.x,
 		flowY: m.dirY || flow.y,
 		seed: pSeed,

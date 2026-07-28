@@ -30,11 +30,11 @@ export function burstMetrics(
 	const swipe = Math.min(Math.max(touchSpeed, flow.speed) * 0.45, 1)
 	const baseRadius =
 		(stopped
-			? 0.042 + speedNorm * 0.035
+			? 0.062 + speedNorm * 0.05
 			: isSwipe
-				? 0.046 + swipe * 0.08
-				: 0.044) *
-		(0.92 + Math.random() * 0.16)
+				? 0.068 + swipe * 0.12
+				: 0.065) *
+		(0.9 + Math.random() * 0.22)
 
 	return {
 		stopped,
@@ -54,10 +54,10 @@ export function burstMetrics(
 			: 1,
 		burstCount: Math.round(
 			(stopped
-				? BURST_COUNT * (0.75 + speedNorm * 0.35)
+				? BURST_COUNT * (0.7 + speedNorm * 0.3)
 				: isSwipe
-					? BURST_COUNT + swipe * 10 + impulse * 4
-					: BURST_COUNT) * (0.88 + Math.random() * 0.22),
+					? BURST_COUNT + swipe * 6 + impulse * 2
+					: BURST_COUNT) * (0.82 + Math.random() * 0.28),
 		),
 		inertiaBase: Math.min(
 			touchSpeed * 0.022 + impulse * 0.06 + (stopped ? speedNorm * 0.035 : 0),

@@ -1197,10 +1197,10 @@ function usePadVisual() {
 
 // src/components/ChaosPad/webgl/constants.ts
 var MAX_PARTICLES = 16e3;
-var BURST_COUNT = 26;
+var BURST_COUNT = 18;
 var PARTICLE_STRIDE = 7;
 var FLOW_LERP = 0.09;
-var TRAIL_FADE = 0.968;
+var TRAIL_FADE = 0.972;
 
 // src/components/ChaosPad/webgl/math.ts
 var lerp = (a, b, t) => a + (b - a) * t;
@@ -1286,8 +1286,8 @@ void main() {
 	vec2 clip = vec2(aPosition.x * 2.0 - 1.0, 1.0 - aPosition.y * 2.0);
 	gl_Position = vec4(clip, 0.0, 1.0);
 	vLife = aLife;
-	float lifeScale = 0.45 + 0.55 * vLife;
-	gl_PointSize = max(aSize * lifeScale * uResolution.y * 0.0028, 2.0);
+	float lifeScale = 0.6 + 0.4 * vLife;
+	gl_PointSize = max(aSize * lifeScale * uResolution.y * 0.0075, 6.0);
 	vColor = aColor;
 }
 `;
@@ -1299,10 +1299,14 @@ out vec4 outColor;
 void main() {
 	vec2 uv = gl_PointCoord - 0.5;
 	float d2 = dot(uv, uv);
-	float core = exp(-d2 * 12.0);
-	float halo = exp(-d2 * 4.5);
-	float alpha = (core * 0.62 + halo * 0.28) * vLife;
-	outColor = vec4(vColor * (0.55 + core * 0.45 + halo * 0.15), alpha);
+	float core = exp(-d2 * 16.0);
+	float halo = exp(-d2 * 5.5);
+	float energy = (core * 0.9 + halo * 0.1) * pow(vLife, 0.82);
+	float luma = dot(vColor, vec3(0.299, 0.587, 0.114));
+	vec3 col = mix(vec3(luma), vColor, 1.35);
+	float alpha = energy * 0.88;
+	vec3 rgb = col * energy * 0.92;
+	outColor = vec4(rgb, alpha);
 }
 `;
 var FADE_VERTEX = `#version 300 es
@@ -1394,7 +1398,7 @@ function burstMetrics(s, flow) {
     dirY = 0;
   }
   const swipe = Math.min(Math.max(touchSpeed, flow.speed) * 0.45, 1);
-  const baseRadius = (stopped ? 0.042 + speedNorm * 0.035 : isSwipe ? 0.046 + swipe * 0.08 : 0.044) * (0.92 + Math.random() * 0.16);
+  const baseRadius = (stopped ? 0.062 + speedNorm * 0.05 : isSwipe ? 0.068 + swipe * 0.12 : 0.065) * (0.9 + Math.random() * 0.22);
   return {
     stopped,
     impulse: impulse2,
@@ -1410,7 +1414,7 @@ function burstMetrics(s, flow) {
     baseRadius,
     stretch: isSwipe ? 1 + swipe * (0.18 + motionBoost * 0.14 + Math.random() * 0.08) : 1,
     burstCount: Math.round(
-      (stopped ? BURST_COUNT * (0.75 + speedNorm * 0.35) : isSwipe ? BURST_COUNT + swipe * 10 + impulse2 * 4 : BURST_COUNT) * (0.88 + Math.random() * 0.22)
+      (stopped ? BURST_COUNT * (0.7 + speedNorm * 0.3) : isSwipe ? BURST_COUNT + swipe * 6 + impulse2 * 2 : BURST_COUNT) * (0.82 + Math.random() * 0.28)
     ),
     inertiaBase: Math.min(
       touchSpeed * 0.022 + impulse2 * 0.06 + (stopped ? speedNorm * 0.035 : 0),
@@ -1503,7 +1507,7 @@ function makeParticle({ s, m, flow, rgb, seed, i }) {
   const [cr, cg, cb] = rgb;
   const pSeed = seed + i * 1.618 + Math.random() * 7;
   const gauss = (Math.random() + Math.random() + Math.random()) / 3;
-  const dist = (gauss * gauss * 0.62 + Math.sqrt(Math.random()) * 0.38) * m.baseRadius;
+  const dist = (gauss * gauss * 0.42 + Math.sqrt(Math.random()) * 0.58) * m.baseRadius;
   const angle = Math.random() * Math.PI * 2;
   let ox = Math.cos(angle) * dist;
   let oy = Math.sin(angle) * dist;
@@ -1514,8 +1518,8 @@ function makeParticle({ s, m, flow, rgb, seed, i }) {
     ox = m.dirX * along * m.stretch + m.perpX * perp * perpScale;
     oy = m.dirY * along * m.stretch + m.perpY * perp * perpScale;
   }
-  ox += (fbm(s.x * 14 + ox * 22 + pSeed, s.y * 14 + oy * 22 + pSeed * 0.7) - 0.5) * m.baseRadius * 0.18;
-  oy += (fbm(s.y * 14 + pSeed, s.x * 14 + pSeed) - 0.5) * m.baseRadius * 0.18;
+  ox += (fbm(s.x * 14 + ox * 22 + pSeed, s.y * 14 + oy * 22 + pSeed * 0.7) - 0.5) * m.baseRadius * 0.28;
+  oy += (fbm(s.y * 14 + pSeed, s.x * 14 + pSeed) - 0.5) * m.baseRadius * 0.28;
   const omag = Math.hypot(ox, oy) || 1e-4;
   const outX = ox / omag;
   const outY = oy / omag;
@@ -1543,10 +1547,10 @@ function makeParticle({ s, m, flow, rgb, seed, i }) {
     vy,
     life: 1,
     maxLife: 1.2 + m.motionBoost * 0.45 + (m.stopped ? 0.35 : 0) + Math.random(),
-    r: cr + (Math.random() - 0.5) * 0.04,
-    g: cg + (Math.random() - 0.5) * 0.04,
-    b: cb + (Math.random() - 0.5) * 0.04,
-    size: 0.78 + Math.random() * 0.72,
+    r: cr * (0.96 + Math.random() * 0.08),
+    g: cg * (0.96 + Math.random() * 0.08),
+    b: cb * (0.96 + Math.random() * 0.08),
+    size: 1.8 + Math.random() * 1.4,
     flowX: m.dirX || flow.x,
     flowY: m.dirY || flow.y,
     seed: pSeed,
