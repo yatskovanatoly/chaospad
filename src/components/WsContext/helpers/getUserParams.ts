@@ -6,15 +6,18 @@ export const colors = [
 	'#a855f7',
 ]
 
-export const getColorForUser = (id: string | undefined) => {
-	if (!id) return undefined
-
+export function hashUserIndex(id: string | undefined, size: number): number {
+	if (!id || size <= 0) return 0
 	let hash = 0
 	for (let i = 0; i < id.length; i++) {
 		hash = id.charCodeAt(i) + ((hash << 5) - hash)
 	}
-	const index = Math.abs(hash) % colors.length
-	return colors[index]
+	return Math.abs(hash) % size
+}
+
+export const getColorForUser = (id: string | undefined) => {
+	if (!id) return undefined
+	return colors[hashUserIndex(id, colors.length)]
 }
 
 export const getUserId = () => {

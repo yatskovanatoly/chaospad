@@ -1,13 +1,14 @@
 import { useChaospadConfig } from '@/context/ChaospadConfigContext'
 import type { Voice } from '@/components/AudioEngineContext/AudioEngine'
 import { useAudioEngine } from '@/components/AudioEngineContext'
+import { getPresetForUser } from '@/components/AudioEngineContext/presets/catalog'
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import useWebSocket from '../../WsContext/useWebSocket'
 
 export function useChaosAudio() {
 	const engine = useAudioEngine()
 	const { volume, reverbLevel, release, quantize } = useChaospadConfig()
-	const { subscribeMotion } = useWebSocket()
+	const { subscribeMotion, userId } = useWebSocket()
 	const voiceRef = useRef<Voice | null>(null)
 	const isActiveRef = useRef(false)
 	const pendingStartRef = useRef(false)
@@ -28,8 +29,11 @@ export function useChaosAudio() {
 			engine.setReverbLevel(reverbLevel)
 			const run = () => {
 				if (!pendingStartRef.current) return
-				const voice = engine.createVoice(position, quantize)
-				voiceRef.current = voice
+				voiceRef.current = engine.createVoice(
+					position,
+					quantize,
+					getPresetForUser(userId),
+				)
 				isActiveRef.current = true
 			}
 			try {
@@ -38,7 +42,7 @@ export function useChaosAudio() {
 				run()
 			}
 		},
-		[engine, quantize, reverbLevel, volume],
+		[engine, quantize, reverbLevel, userId, volume],
 	)
 
 	const stopAudio = useCallback(() => {
@@ -60,13 +64,9 @@ export function useChaosAudio() {
 				voiceRef.current?.updatePosition(pos.nx, pos.ny)
 				return
 			}
-			if (type === 'stop' && isActiveRef.current) {
-				stopAudio()
-			}
+			if (type === 'stop' && isActiveRef.current) stopAudio()
 		})
 	}, [startAudio, stopAudio, subscribeMotion])
 
-	return {
-		isActive: isActiveRef.current,
-	}
+	return { isActive: isActiveRef.current }
 }

@@ -1,5 +1,6 @@
 import type { RemoteUserType } from '@/components/ChaosPad/hooks/useChaosWs'
 import type { AudioEngine } from '@/components/AudioEngineContext/AudioEngine'
+import { getPresetForUser } from '@/components/AudioEngineContext/presets/catalog'
 import type { QuantizeMode } from '@/components/AudioEngineContext/helpers/quantizeFreq'
 
 const handleRemoteEvent = ({
@@ -15,11 +16,12 @@ const handleRemoteEvent = ({
 	engine.unlock()
 
 	if (type === 'start') {
-		const existing = remoteUsersRef[userId]
-		if (existing) {
-			existing.stop(remoteRelease)
-		}
-		remoteUsersRef[userId] = engine.createVoice({ nx, ny }, quantize)
+		remoteUsersRef[userId]?.stop(remoteRelease)
+		remoteUsersRef[userId] = engine.createVoice(
+			{ nx, ny },
+			quantize,
+			getPresetForUser(userId),
+		)
 	}
 
 	if (type === 'move') {

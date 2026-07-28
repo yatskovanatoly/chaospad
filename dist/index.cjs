@@ -227,32 +227,383 @@ var quantizeFreq = (freq, mode) => {
   return 440 * Math.pow(2, Math.round(12 * Math.log2(freq / 440)) / 12);
 };
 
-// src/components/AudioEngineContext/helpers/updateSoundFromPosition.ts
-var SMOOTH_S = 0.03;
-var updateSoundFromPosition = (clientX, clientY, ctx, osc, gain, quantize = "none") => {
-  if (!ctx || !osc || !gain) return;
-  const { freq: rawFreq, amp } = getSoundParamsFromXY(clientX, clientY);
-  const freq = quantizeFreq(rawFreq, quantize);
-  const now = ctx.currentTime;
-  const end = now + SMOOTH_S;
-  const targetGain = amp * 0.5;
-  const currentFreq = osc.frequency.value;
-  if (Math.abs(currentFreq - freq) > 0.1) {
-    osc.frequency.cancelScheduledValues(now);
-    osc.frequency.setValueAtTime(currentFreq, now);
-    osc.frequency.exponentialRampToValueAtTime(Math.max(freq, 1e-6), end);
+// src/components/AudioEngineContext/helpers/padParams.ts
+function getPadParams(nx, ny, quantize = "none") {
+  const { freq: rawFreq, amp } = getSoundParamsFromXY(nx, ny);
+  return {
+    freq: quantizeFreq(rawFreq, quantize),
+    amp: amp * 0.5,
+    pan: nx * 2 - 1,
+    reverbSend: ny * 0.75
+  };
+}
+
+// src/components/AudioEngineContext/helpers/spatialChain.ts
+var SMOOTH = 0.03;
+function createSpatialChain(ctx) {
+  const input = ctx.createGain();
+  const panner = ctx.createStereoPanner();
+  const dryOut = ctx.createGain();
+  const wetOut = ctx.createGain();
+  input.connect(panner);
+  panner.connect(dryOut);
+  panner.connect(wetOut);
+  const setParams = (pan, reverbSend) => {
+    const t = ctx.currentTime;
+    panner.pan.setTargetAtTime(pan, t, SMOOTH);
+    dryOut.gain.setTargetAtTime(1 - reverbSend * 0.65, t, SMOOTH);
+    wetOut.gain.setTargetAtTime(reverbSend, t, SMOOTH);
+  };
+  return {
+    input,
+    dryOut,
+    wetOut,
+    setParams,
+    dispose: () => {
+      input.disconnect();
+      panner.disconnect();
+      dryOut.disconnect();
+      wetOut.disconnect();
+    }
+  };
+}
+
+// src/components/WsContext/helpers/getUserParams.ts
+var colors = [
+  "#3b82f6",
+  "#ef4444",
+  "#22c55e",
+  "#eab308",
+  "#a855f7"
+];
+function hashUserIndex(id, size) {
+  if (!id || size <= 0) return 0;
+  let hash2 = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash2 = id.charCodeAt(i) + ((hash2 << 5) - hash2);
   }
-  const g = gain.gain;
-  const currentGain = g.value;
-  if (Math.abs(currentGain - targetGain) > 0.01) {
-    g.cancelScheduledValues(now);
-    g.setValueAtTime(currentGain, now);
-    g.linearRampToValueAtTime(targetGain, end);
+  return Math.abs(hash2) % size;
+}
+var getColorForUser = (id) => {
+  if (!id) return void 0;
+  return colors[hashUserIndex(id, colors.length)];
+};
+var getUserId = () => {
+  try {
+    return crypto.randomUUID();
+  } catch (_error) {
+    console.log("Error: Insecure environment to use crypto.randomUUID");
+    return Math.random().toFixed();
+  }
+};
+
+// src/components/AudioEngineContext/presets/fmBell.ts
+var SMOOTH2 = 0.03;
+var MOD_RATIO = 4.07;
+function createFmBell(ctx) {
+  const output = ctx.createGain();
+  const carrier = ctx.createOscillator();
+  const mod = ctx.createOscillator();
+  const modGain = ctx.createGain();
+  const high = ctx.createBiquadFilter();
+  carrier.type = "sine";
+  mod.type = "sine";
+  high.type = "highpass";
+  high.frequency.value = 380;
+  high.Q.value = 0.7;
+  carrier.connect(output);
+  carrier.connect(high);
+  high.connect(output);
+  mod.connect(modGain);
+  modGain.connect(carrier.frequency);
+  return {
+    output,
+    setParams(p) {
+      const t = ctx.currentTime;
+      carrier.frequency.setTargetAtTime(p.freq, t, SMOOTH2);
+      mod.frequency.setTargetAtTime(p.freq * MOD_RATIO, t, SMOOTH2);
+      modGain.gain.setTargetAtTime(600 + p.freq * 6.5, t, SMOOTH2);
+      high.frequency.setTargetAtTime(280 + p.freq * 0.6, t, SMOOTH2);
+      output.gain.setTargetAtTime(p.amp * 0.72, t, SMOOTH2);
+    },
+    start(when) {
+      carrier.start(when);
+      mod.start(when);
+    },
+    stop(release, when) {
+      output.gain.cancelScheduledValues(when);
+      output.gain.setValueAtTime(output.gain.value, when);
+      output.gain.linearRampToValueAtTime(0, when + release);
+      const end = when + release + 0.05;
+      carrier.stop(end);
+      mod.stop(end);
+    },
+    dispose() {
+      carrier.disconnect();
+      mod.disconnect();
+      modGain.disconnect();
+      high.disconnect();
+      output.disconnect();
+    }
+  };
+}
+
+// src/components/AudioEngineContext/presets/filteredSaw.ts
+var SMOOTH3 = 0.03;
+function createFilteredSaw(ctx) {
+  const output = ctx.createGain();
+  const sine = ctx.createOscillator();
+  const tri = ctx.createOscillator();
+  const sineGain = ctx.createGain();
+  const triGain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+  sine.type = "sine";
+  tri.type = "triangle";
+  sineGain.gain.value = 0.62;
+  triGain.gain.value = 0.28;
+  filter.type = "lowpass";
+  filter.Q.value = 0.45;
+  sine.connect(sineGain);
+  tri.connect(triGain);
+  sineGain.connect(filter);
+  triGain.connect(filter);
+  filter.connect(output);
+  const vibrato = ctx.createOscillator();
+  const vibratoDepth = ctx.createGain();
+  vibrato.frequency.value = 2.8;
+  vibratoDepth.gain.value = 5;
+  vibrato.connect(vibratoDepth);
+  vibratoDepth.connect(sine.detune);
+  vibratoDepth.connect(tri.detune);
+  return {
+    output,
+    setParams(p) {
+      const t = ctx.currentTime;
+      sine.frequency.setTargetAtTime(p.freq, t, SMOOTH3);
+      tri.frequency.setTargetAtTime(p.freq, t, SMOOTH3);
+      filter.frequency.setTargetAtTime(520 + p.freq * 1.6, t, SMOOTH3);
+      output.gain.setTargetAtTime(p.amp * 0.88, t, SMOOTH3);
+    },
+    start(when) {
+      sine.start(when);
+      tri.start(when);
+      vibrato.start(when);
+    },
+    stop(release, when) {
+      output.gain.cancelScheduledValues(when);
+      output.gain.setValueAtTime(output.gain.value, when);
+      output.gain.linearRampToValueAtTime(0, when + release);
+      const end = when + release + 0.05;
+      sine.stop(end);
+      tri.stop(end);
+      vibrato.stop(end);
+    },
+    dispose() {
+      sine.disconnect();
+      tri.disconnect();
+      sineGain.disconnect();
+      triGain.disconnect();
+      filter.disconnect();
+      vibrato.disconnect();
+      output.disconnect();
+    }
+  };
+}
+
+// src/components/AudioEngineContext/presets/noiseRes.ts
+var SMOOTH4 = 0.03;
+function createNoiseRes(ctx) {
+  const output = ctx.createGain();
+  const voices = [
+    { detune: 0, level: 0.46 },
+    { detune: -22, level: 0.27 },
+    { detune: 22, level: 0.27 },
+    { detune: -8, level: 0.14, octave: 0.5 },
+    { detune: 5, level: 0.1, octave: 2 }
+  ];
+  const oscs = voices.map((v) => {
+    var _a;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.detune.value = v.detune;
+    gain.gain.value = v.level;
+    osc.connect(gain);
+    gain.connect(output);
+    return { osc, gain, octave: (_a = v.octave) != null ? _a : 1 };
+  });
+  const vibrato = ctx.createOscillator();
+  const vibratoDepth = ctx.createGain();
+  vibrato.frequency.value = 3.1;
+  vibratoDepth.gain.value = 14;
+  vibrato.connect(vibratoDepth);
+  oscs.forEach(({ osc }) => vibratoDepth.connect(osc.detune));
+  const tone = ctx.createBiquadFilter();
+  tone.type = "lowpass";
+  tone.frequency.value = 1600;
+  tone.Q.value = 0.45;
+  output.connect(tone);
+  const out = ctx.createGain();
+  tone.connect(out);
+  return {
+    output: out,
+    setParams(p) {
+      const t = ctx.currentTime;
+      oscs.forEach(
+        ({ osc, octave }) => osc.frequency.setTargetAtTime(p.freq * octave, t, SMOOTH4)
+      );
+      tone.frequency.setTargetAtTime(680 + p.freq * 2.1, t, SMOOTH4);
+      out.gain.setTargetAtTime(p.amp * 0.92, t, SMOOTH4);
+    },
+    start(when) {
+      oscs.forEach(({ osc }) => osc.start(when));
+      vibrato.start(when);
+    },
+    stop(release, when) {
+      out.gain.cancelScheduledValues(when);
+      out.gain.setValueAtTime(out.gain.value, when);
+      out.gain.linearRampToValueAtTime(0, when + release);
+      const end = when + release + 0.05;
+      oscs.forEach(({ osc }) => osc.stop(end));
+      vibrato.stop(end);
+    },
+    dispose() {
+      oscs.forEach(({ osc, gain }) => {
+        osc.disconnect();
+        gain.disconnect();
+      });
+      vibrato.disconnect();
+      tone.disconnect();
+      out.disconnect();
+    }
+  };
+}
+
+// src/components/AudioEngineContext/presets/sineChorus.ts
+var SMOOTH5 = 0.03;
+function createSineChorus(ctx) {
+  const output = ctx.createGain();
+  const voices = [
+    { type: "triangle", detune: 0, level: 0.5 },
+    { type: "triangle", detune: -14, level: 0.28 },
+    { type: "triangle", detune: 14, level: 0.28 },
+    { type: "sine", detune: 0, level: 0.12, octave: 2 }
+  ];
+  const oscs = voices.map((v) => {
+    var _a;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = v.type;
+    osc.detune.value = v.detune;
+    gain.gain.value = v.level;
+    osc.connect(gain);
+    gain.connect(output);
+    return { osc, gain, octave: (_a = v.octave) != null ? _a : 1 };
+  });
+  const vibrato = ctx.createOscillator();
+  const vibratoDepth = ctx.createGain();
+  vibrato.frequency.value = 5.2;
+  vibratoDepth.gain.value = 10;
+  vibrato.connect(vibratoDepth);
+  oscs.forEach(({ osc }) => vibratoDepth.connect(osc.detune));
+  const tone = ctx.createBiquadFilter();
+  tone.type = "lowpass";
+  tone.frequency.value = 2200;
+  tone.Q.value = 0.6;
+  output.connect(tone);
+  const out = ctx.createGain();
+  tone.connect(out);
+  return {
+    output: out,
+    setParams(p) {
+      const t = ctx.currentTime;
+      oscs.forEach(
+        ({ osc, octave }) => osc.frequency.setTargetAtTime(p.freq * octave, t, SMOOTH5)
+      );
+      tone.frequency.setTargetAtTime(900 + p.freq * 2.8, t, SMOOTH5);
+      out.gain.setTargetAtTime(p.amp * 0.95, t, SMOOTH5);
+    },
+    start(when) {
+      oscs.forEach(({ osc }) => osc.start(when));
+      vibrato.start(when);
+    },
+    stop(release, when) {
+      out.gain.cancelScheduledValues(when);
+      out.gain.setValueAtTime(out.gain.value, when);
+      out.gain.linearRampToValueAtTime(0, when + release);
+      const end = when + release + 0.05;
+      oscs.forEach(({ osc }) => osc.stop(end));
+      vibrato.stop(end);
+    },
+    dispose() {
+      oscs.forEach(({ osc, gain }) => {
+        osc.disconnect();
+        gain.disconnect();
+      });
+      vibrato.disconnect();
+      tone.disconnect();
+      out.disconnect();
+    }
+  };
+}
+
+// src/components/AudioEngineContext/presets/catalog.ts
+var PRESETS = [
+  createSineChorus,
+  createFmBell,
+  createFilteredSaw,
+  createNoiseRes
+];
+var PRESET_COUNT = PRESETS.length;
+function getPresetForUser(userId) {
+  const index = hashUserIndex(userId, PRESET_COUNT);
+  return index;
+}
+function createPresetVoice(ctx, presetId) {
+  return PRESETS[presetId](ctx);
+}
+
+// src/components/AudioEngineContext/Voice.ts
+var ATTACK_S = 0.1;
+var Voice = class {
+  constructor(engine, position, quantize, presetId) {
+    this.engine = engine;
+    this.quantize = quantize;
+    const ctx = engine.getContextForVoice();
+    this.preset = createPresetVoice(ctx, presetId);
+    this.spatial = createSpatialChain(ctx);
+    this.preset.output.connect(this.spatial.input);
+    engine.connectDry(this.spatial.dryOut);
+    engine.connectWet(this.spatial.wetOut);
+    const params = getPadParams(position.nx, position.ny, quantize);
+    this.spatial.setParams(params.pan, params.reverbSend);
+    const now = ctx.currentTime;
+    this.preset.setParams({ freq: params.freq, amp: 0 });
+    this.preset.output.gain.setValueAtTime(0, now);
+    this.preset.output.gain.linearRampToValueAtTime(params.amp, now + ATTACK_S);
+    this.preset.start(now + 1e-3);
+  }
+  updatePosition(nx, ny) {
+    this.applyParams(getPadParams(nx, ny, this.quantize));
+  }
+  stop(releaseSeconds) {
+    const ctx = this.engine.getContextForVoice();
+    const now = ctx.currentTime;
+    this.preset.stop(releaseSeconds, now);
+    if (this.releaseTimer) clearTimeout(this.releaseTimer);
+    this.releaseTimer = setTimeout(() => this.dispose(), releaseSeconds * 1e3 + 100);
+  }
+  applyParams(params) {
+    this.preset.setParams({ freq: params.freq, amp: params.amp });
+    this.spatial.setParams(params.pan, params.reverbSend);
+  }
+  dispose() {
+    this.preset.dispose();
+    this.spatial.dispose();
   }
 };
 
 // src/components/AudioEngineContext/AudioEngine.ts
-var ATTACK_S = 0.1;
 var AudioEngine = class {
   constructor() {
     this.ctx = null;
@@ -263,11 +614,8 @@ var AudioEngine = class {
     this.volumeValue = 1;
     this.reverbLevelValue = 0.5;
   }
-  /** Create/resume AudioContext inside a user-gesture handler (required on iOS). */
   unlock() {
-    if (!this.ctx) {
-      this.ctx = createAudioContext();
-    }
+    if (!this.ctx) this.ctx = createAudioContext();
     if (!this.graphReady) {
       this.initGraph();
       this.graphReady = true;
@@ -283,6 +631,30 @@ var AudioEngine = class {
     this.convolver = null;
     this.convolverGain = null;
     this.graphReady = false;
+  }
+  setVolume(v) {
+    this.volumeValue = v;
+    if (this.masterGain) this.masterGain.gain.value = v;
+  }
+  setReverbLevel(v) {
+    this.reverbLevelValue = v;
+    if (this.convolverGain) this.convolverGain.gain.value = v;
+  }
+  createVoice(position, quantize = "none", presetId = 0) {
+    this.unlock();
+    return new Voice(this, position, quantize, presetId);
+  }
+  connectDry(node) {
+    node.connect(this.masterGain);
+  }
+  connectWet(node) {
+    if (this.convolver) node.connect(this.convolver);
+  }
+  getContextForVoice() {
+    if (!this.ctx || !this.masterGain) {
+      throw new Error("AudioEngine.unlock() must be called before playback");
+    }
+    return this.ctx;
   }
   initGraph() {
     const ctx = this.ctx;
@@ -301,75 +673,6 @@ var AudioEngine = class {
       this.convolver = null;
       this.convolverGain = null;
     }
-  }
-  getContext() {
-    if (!this.ctx || !this.masterGain) {
-      throw new Error("AudioEngine.unlock() must be called before playback");
-    }
-    return this.ctx;
-  }
-  setVolume(v) {
-    this.volumeValue = v;
-    if (this.masterGain) this.masterGain.gain.value = v;
-  }
-  setReverbLevel(v) {
-    this.reverbLevelValue = v;
-    if (this.convolverGain) this.convolverGain.gain.value = v;
-  }
-  createVoice(position, quantize = "none") {
-    this.unlock();
-    return new Voice(this, position, quantize);
-  }
-  connectVoiceOutput(gain) {
-    gain.connect(this.masterGain);
-    if (this.convolver) gain.connect(this.convolver);
-  }
-  getContextForVoice() {
-    return this.getContext();
-  }
-};
-var Voice = class {
-  constructor(engine, position, quantize = "none") {
-    this.engine = engine;
-    this.quantize = quantize;
-    const ctx = engine.getContextForVoice();
-    this.oscillator = ctx.createOscillator();
-    this.gain = ctx.createGain();
-    this.oscillator.type = "sine";
-    const { freq: rawFreq, amp } = getSoundParamsFromXY(position.nx, position.ny);
-    this.oscillator.frequency.value = quantizeFreq(rawFreq, quantize);
-    const target = amp * 0.5;
-    const now = ctx.currentTime;
-    this.gain.gain.value = 0;
-    this.gain.gain.setValueAtTime(0, now);
-    this.gain.gain.linearRampToValueAtTime(target, now + ATTACK_S);
-    this.oscillator.connect(this.gain);
-    engine.connectVoiceOutput(this.gain);
-    this.oscillator.start(now + 1e-3);
-  }
-  updatePosition(nx, ny) {
-    updateSoundFromPosition(
-      nx,
-      ny,
-      this.engine.getContextForVoice(),
-      this.oscillator,
-      this.gain,
-      this.quantize
-    );
-  }
-  stop(releaseSeconds) {
-    const ctx = this.engine.getContextForVoice();
-    const now = ctx.currentTime;
-    const g = this.gain.gain;
-    g.cancelScheduledValues(now);
-    g.setValueAtTime(g.value, now);
-    g.linearRampToValueAtTime(0, now + releaseSeconds);
-    this.oscillator.stop(now + releaseSeconds + 0.05);
-    if (this.releaseTimer) clearTimeout(this.releaseTimer);
-    this.releaseTimer = setTimeout(() => {
-      this.gain.disconnect();
-      this.oscillator.disconnect();
-    }, releaseSeconds * 1e3 + 100);
   }
 };
 
@@ -427,7 +730,7 @@ var useWebSocket_default = useWebSocket;
 function useChaosAudio() {
   const engine = useAudioEngine();
   const { volume, reverbLevel, release, quantize } = useChaospadConfig();
-  const { subscribeMotion } = useWebSocket_default();
+  const { subscribeMotion, userId } = useWebSocket_default();
   const voiceRef = (0, import_react7.useRef)(null);
   const isActiveRef = (0, import_react7.useRef)(false);
   const pendingStartRef = (0, import_react7.useRef)(false);
@@ -445,8 +748,11 @@ function useChaosAudio() {
       engine.setReverbLevel(reverbLevel);
       const run = () => {
         if (!pendingStartRef.current) return;
-        const voice = engine.createVoice(position, quantize);
-        voiceRef.current = voice;
+        voiceRef.current = engine.createVoice(
+          position,
+          quantize,
+          getPresetForUser(userId)
+        );
         isActiveRef.current = true;
       };
       try {
@@ -455,7 +761,7 @@ function useChaosAudio() {
         run();
       }
     },
-    [engine, quantize, reverbLevel, volume]
+    [engine, quantize, reverbLevel, userId, volume]
   );
   const stopAudio = (0, import_react7.useCallback)(() => {
     pendingStartRef.current = false;
@@ -476,14 +782,10 @@ function useChaosAudio() {
         (_a = voiceRef.current) == null ? void 0 : _a.updatePosition(pos.nx, pos.ny);
         return;
       }
-      if (type === "stop" && isActiveRef.current) {
-        stopAudio();
-      }
+      if (type === "stop" && isActiveRef.current) stopAudio();
     });
   }, [startAudio, stopAudio, subscribeMotion]);
-  return {
-    isActive: isActiveRef.current
-  };
+  return { isActive: isActiveRef.current };
 }
 
 // src/components/ChaosPad/helpers/handleRemoteAudio.ts
@@ -497,17 +799,18 @@ var handleRemoteEvent = ({
   quantize,
   remoteRelease
 }) => {
-  var _a;
+  var _a, _b;
   engine.unlock();
   if (type === "start") {
-    const existing = remoteUsersRef[userId];
-    if (existing) {
-      existing.stop(remoteRelease);
-    }
-    remoteUsersRef[userId] = engine.createVoice({ nx, ny }, quantize);
+    (_a = remoteUsersRef[userId]) == null ? void 0 : _a.stop(remoteRelease);
+    remoteUsersRef[userId] = engine.createVoice(
+      { nx, ny },
+      quantize,
+      getPresetForUser(userId)
+    );
   }
   if (type === "move") {
-    (_a = remoteUsersRef[userId]) == null ? void 0 : _a.updatePosition(nx, ny);
+    (_b = remoteUsersRef[userId]) == null ? void 0 : _b.updatePosition(nx, ny);
   }
   if (type === "stop") {
     const user = remoteUsersRef[userId];
@@ -1498,32 +1801,6 @@ function ChaosPad({ className, style }) {
     /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { ref: visualRef, className: "chaospad-glow-layer", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PadGlCanvas, { containerRef: visualRef }) })
   ] });
 }
-
-// src/components/WsContext/helpers/getUserParams.ts
-var colors = [
-  "#3b82f6",
-  "#ef4444",
-  "#22c55e",
-  "#eab308",
-  "#a855f7"
-];
-var getColorForUser = (id) => {
-  if (!id) return void 0;
-  let hash2 = 0;
-  for (let i = 0; i < id.length; i++) {
-    hash2 = id.charCodeAt(i) + ((hash2 << 5) - hash2);
-  }
-  const index = Math.abs(hash2) % colors.length;
-  return colors[index];
-};
-var getUserId = () => {
-  try {
-    return crypto.randomUUID();
-  } catch (_error) {
-    console.log("Error: Insecure environment to use crypto.randomUUID");
-    return Math.random().toFixed();
-  }
-};
 
 // src/components/WsContext/helpers/wsMessage.ts
 var clamp01 = (n) => Math.min(1, Math.max(0, n));
