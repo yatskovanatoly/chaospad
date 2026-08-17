@@ -1,7 +1,6 @@
 import type { SplatInput } from '../visual/types'
 import { TRAIL_FADE } from './constants'
 import { drawParticles } from './drawParticles'
-import { smoothFlow } from './flowSmooth'
 import type { GlResources } from './glResources'
 import { createGlResources, destroyGlResources } from './glResources'
 import { spawnBurst } from './spawnBurst'

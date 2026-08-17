@@ -334,11 +334,11 @@ function addGrainLayer(ctx, source, out, filter, level) {
   return { node, gain, filter };
 }
 var BASE_VOICES = [
-  { detune: 0, level: 0.26 },
-  { detune: -8, level: 0.18 },
-  { detune: 8, level: 0.18 },
-  { detune: -16, level: 0.1 },
-  { detune: 16, level: 0.1 }
+  { detune: 0, level: 0.26, octave: 1 },
+  { detune: -8, level: 0.18, octave: 1 },
+  { detune: 8, level: 0.18, octave: 1 },
+  { detune: -16, level: 0.1, octave: 1 },
+  { detune: 16, level: 0.1, octave: 1 }
 ];
 var HARMONIC_VOICES = [
   { detune: 2, level: 0.048, octave: 2 },
@@ -914,10 +914,64 @@ function useAudioUnlock() {
   }, [engine]);
 }
 
+// src/components/ChaosPad/helpers/scrollTarget.ts
+var SCROLL_EPS = 2;
+var SCROLLS = /auto|scroll|overlay/;
+var CLIPS = /hidden|clip/;
+function scrollsY(el, style) {
+  return SCROLLS.test(style.overflowY) && el.scrollHeight > el.clientHeight + SCROLL_EPS;
+}
+function scrollsX(el, style) {
+  return SCROLLS.test(style.overflowX) && el.scrollWidth > el.clientWidth + SCROLL_EPS;
+}
+function pageScroller() {
+  var _a;
+  const html = document.documentElement;
+  const htmlStyle = getComputedStyle(html);
+  const bodyStyle = document.body ? getComputedStyle(document.body) : htmlStyle;
+  const clippedY = CLIPS.test(htmlStyle.overflowY) || CLIPS.test(bodyStyle.overflowY);
+  const clippedX = CLIPS.test(htmlStyle.overflowX) || CLIPS.test(bodyStyle.overflowX);
+  const scroller = (_a = document.scrollingElement) != null ? _a : html;
+  const canY = !clippedY && scroller.scrollHeight > scroller.clientHeight + SCROLL_EPS;
+  const canX = !clippedX && scroller.scrollWidth > scroller.clientWidth + SCROLL_EPS;
+  return canY || canX ? scroller : null;
+}
+function findScrollTarget(clientX, clientY) {
+  if (typeof document === "undefined") return null;
+  let node = document.elementFromPoint(clientX, clientY);
+  while (node && node !== document.body && node !== document.documentElement) {
+    const style = getComputedStyle(node);
+    if (scrollsY(node, style) || scrollsX(node, style)) return node;
+    node = node.parentElement;
+  }
+  return pageScroller();
+}
+function scrollAxis(el, axis, delta) {
+  const before = el[axis];
+  el[axis] = before + delta;
+  return el[axis] !== before;
+}
+function scrollWithChaining(el, dx, dy) {
+  const movedX = dx !== 0 && scrollAxis(el, "scrollLeft", dx);
+  const movedY = dy !== 0 && scrollAxis(el, "scrollTop", dy);
+  let moved = movedX || movedY;
+  const page = document.scrollingElement;
+  if (page && page !== el) {
+    if (dx !== 0 && !movedX) moved = scrollAxis(page, "scrollLeft", dx) || moved;
+    if (dy !== 0 && !movedY) moved = scrollAxis(page, "scrollTop", dy) || moved;
+  }
+  return moved;
+}
+
 // src/components/ChaosPad/hooks/useGlobalPointerPad.ts
 var import_react10 = require("react");
 var DRAG_THRESHOLD_PX = 10;
 var CLICK_SUPPRESS_MS = 400;
+var FRAME_MS = 1e3 / 60;
+var VELOCITY_SMOOTH = 0.6;
+var MOMENTUM_FRICTION = 0.94;
+var MOMENTUM_MIN_PX = 0.4;
+var MOMENTUM_STALE_MS = 100;
 var PASSIVE_CAPTURE = { capture: true, passive: true };
 var ACTIVE_CAPTURE = { capture: true, passive: false };
 function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
@@ -933,10 +987,34 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
   engineRef.current = engine;
   (0, import_react10.useLayoutEffect)(() => {
     var _a;
+    let scroll = null;
+    let momentumRaf = 0;
     const stopHoldHeartbeat = () => {
       if (holdIntervalRef.current == null) return;
       clearInterval(holdIntervalRef.current);
       holdIntervalRef.current = null;
+    };
+    const stopMomentum = () => {
+      if (!momentumRaf) return;
+      cancelAnimationFrame(momentumRaf);
+      momentumRaf = 0;
+    };
+    const startMomentum = (el, vx, vy) => {
+      stopMomentum();
+      let mx = vx;
+      let my = vy;
+      if (Math.hypot(mx, my) < MOMENTUM_MIN_PX) return;
+      const step = () => {
+        mx *= MOMENTUM_FRICTION;
+        my *= MOMENTUM_FRICTION;
+        const moved = scrollWithChaining(el, mx, my);
+        if (!moved || Math.hypot(mx, my) < MOMENTUM_MIN_PX) {
+          momentumRaf = 0;
+          return;
+        }
+        momentumRaf = requestAnimationFrame(step);
+      };
+      momentumRaf = requestAnimationFrame(step);
     };
     const emit = (clientX, clientY, type) => {
       var _a2;
@@ -958,22 +1036,23 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       if (holdIntervalRef.current != null) return;
       holdIntervalRef.current = setInterval(emitHoldMove, glowIntervalMs);
     };
+    const suppressesClick = (session) => passThrough && session.isDrag && !session.isTouch;
     const endSession = (pointerId, clientX, clientY, event) => {
       const session = sessionsRef.current.get(pointerId);
       if (!session) return;
       sessionsRef.current.delete(pointerId);
       emit(clientX, clientY, "stop");
       if (sessionsRef.current.size === 0) stopHoldHeartbeat();
-      if (passThrough && session.isDrag) {
+      if (suppressesClick(session)) {
         suppressClickUntilRef.current = Date.now() + CLICK_SUPPRESS_MS;
         event == null ? void 0 : event.preventDefault();
         event == null ? void 0 : event.stopPropagation();
       }
     };
     const endAllSessions = (event) => {
-      for (const [pointerId, session] of sessionsRef.current) {
+      for (const [, session] of sessionsRef.current) {
         emit(session.lastX, session.lastY, "stop");
-        if (passThrough && session.isDrag) {
+        if (suppressesClick(session)) {
           suppressClickUntilRef.current = Date.now() + CLICK_SUPPRESS_MS;
           event == null ? void 0 : event.preventDefault();
         }
@@ -984,8 +1063,36 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
     const unlockAudio = () => {
       engineRef.current.unlock();
     };
-    const onTouchStart = () => {
+    const onTouchStart = (e) => {
       unlockAudio();
+      stopMomentum();
+      scroll = null;
+      if (!passThrough) return;
+      const touch = e.touches[0];
+      if (!touch || e.touches.length > 1) return;
+      const el = findScrollTarget(touch.clientX, touch.clientY);
+      if (!el) return;
+      scroll = {
+        el,
+        lastX: touch.clientX,
+        lastY: touch.clientY,
+        lastAt: e.timeStamp,
+        vx: 0,
+        vy: 0
+      };
+    };
+    const driveScroll = (touch, at) => {
+      if (!scroll) return;
+      const dx = scroll.lastX - touch.clientX;
+      const dy = scroll.lastY - touch.clientY;
+      const dt = Math.max(at - scroll.lastAt, 1);
+      scroll.lastX = touch.clientX;
+      scroll.lastY = touch.clientY;
+      scroll.lastAt = at;
+      scrollWithChaining(scroll.el, dx, dy);
+      const perFrame = FRAME_MS / dt;
+      scroll.vx += (dx * perFrame - scroll.vx) * VELOCITY_SMOOTH;
+      scroll.vy += (dy * perFrame - scroll.vy) * VELOCITY_SMOOTH;
     };
     const onPointerDown = (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
@@ -995,7 +1102,8 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
         startY: e.clientY,
         lastX: e.clientX,
         lastY: e.clientY,
-        isDrag: !passThrough
+        isDrag: !passThrough,
+        isTouch: e.pointerType !== "mouse"
       });
       if (!passThrough) {
         e.preventDefault();
@@ -1020,7 +1128,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
         }
       }
       if (!passThrough || session.isDrag) {
-        e.preventDefault();
+        if (!passThrough || !session.isTouch) e.preventDefault();
         emit(e.clientX, e.clientY, "move");
       }
     };
@@ -1030,6 +1138,9 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       endSession(e.pointerId, e.clientX, e.clientY, e);
     };
     const onPointerCancel = (e) => {
+      const session = sessionsRef.current.get(e.pointerId);
+      if (!session) return;
+      if (passThrough && session.isTouch) return;
       endSession(e.pointerId, e.clientX, e.clientY, e);
     };
     const onTouchMove = (e) => {
@@ -1037,6 +1148,10 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       unlockAudio();
       const touch = e.touches[0];
       if (!touch) return;
+      if (e.touches.length > 1) {
+        scroll = null;
+        return;
+      }
       const firstEntry = sessionsRef.current.entries().next();
       if (firstEntry.done) return;
       const [, session] = firstEntry.value;
@@ -1049,18 +1164,25 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
           session.isDrag = true;
         }
       }
+      e.preventDefault();
+      if (passThrough) driveScroll(touch, e.timeStamp);
       if (!passThrough || session.isDrag) {
-        e.preventDefault();
         emit(touch.clientX, touch.clientY, "move");
       }
     };
     const onTouchEnd = (e) => {
       unlockAudio();
+      if (scroll && e.touches.length === 0) {
+        const stale = e.timeStamp - scroll.lastAt > MOMENTUM_STALE_MS;
+        if (!stale) startMomentum(scroll.el, scroll.vx, scroll.vy);
+        scroll = null;
+      }
       if (sessionsRef.current.size === 0) return;
       if (e.touches.length > 0) return;
       endAllSessions(e);
     };
     const onTouchCancel = (e) => {
+      scroll = null;
       if (sessionsRef.current.size === 0) return;
       endAllSessions(e);
     };
@@ -1076,36 +1198,31 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       }
     };
     const target = passThrough ? document : (_a = surfaceRef.current) != null ? _a : document;
-    document.addEventListener("touchstart", onTouchStart, PASSIVE_CAPTURE);
-    document.addEventListener("touchend", onTouchEnd, PASSIVE_CAPTURE);
-    target.addEventListener("pointerdown", onPointerDown, PASSIVE_CAPTURE);
-    target.addEventListener("pointermove", onPointerMove, ACTIVE_CAPTURE);
-    target.addEventListener("pointerup", onPointerUp, PASSIVE_CAPTURE);
-    target.addEventListener("pointercancel", onPointerCancel, PASSIVE_CAPTURE);
-    document.addEventListener("touchmove", onTouchMove, ACTIVE_CAPTURE);
-    document.addEventListener("touchcancel", onTouchCancel, PASSIVE_CAPTURE);
-    document.addEventListener("visibilitychange", endAllSessions);
-    window.addEventListener("blur", endAllSessions);
+    const unbinds = [];
+    const bind = (el, type, fn, opts) => {
+      const listener = fn;
+      el.addEventListener(type, listener, opts);
+      unbinds.push(() => el.removeEventListener(type, listener, opts));
+    };
+    bind(document, "touchstart", onTouchStart, PASSIVE_CAPTURE);
+    bind(document, "touchend", onTouchEnd, PASSIVE_CAPTURE);
+    bind(target, "pointerdown", onPointerDown, PASSIVE_CAPTURE);
+    bind(target, "pointermove", onPointerMove, ACTIVE_CAPTURE);
+    bind(target, "pointerup", onPointerUp, ACTIVE_CAPTURE);
+    bind(target, "pointercancel", onPointerCancel, PASSIVE_CAPTURE);
+    bind(document, "touchmove", onTouchMove, ACTIVE_CAPTURE);
+    bind(document, "touchcancel", onTouchCancel, PASSIVE_CAPTURE);
+    bind(document, "visibilitychange", endAllSessions, false);
+    bind(window, "blur", endAllSessions, false);
     if (passThrough) {
-      document.addEventListener("click", onClickCapture, true);
-      document.addEventListener("dragstart", onDragStart, ACTIVE_CAPTURE);
+      bind(document, "click", onClickCapture, true);
+      bind(document, "dragstart", onDragStart, ACTIVE_CAPTURE);
     }
     return () => {
-      document.removeEventListener("touchstart", onTouchStart, PASSIVE_CAPTURE);
-      document.removeEventListener("touchend", onTouchEnd, PASSIVE_CAPTURE);
-      target.removeEventListener("pointerdown", onPointerDown, PASSIVE_CAPTURE);
-      target.removeEventListener("pointermove", onPointerMove, ACTIVE_CAPTURE);
-      target.removeEventListener("pointerup", onPointerUp, PASSIVE_CAPTURE);
-      target.removeEventListener("pointercancel", onPointerCancel, PASSIVE_CAPTURE);
-      document.removeEventListener("touchmove", onTouchMove, ACTIVE_CAPTURE);
-      document.removeEventListener("touchend", onTouchEnd, PASSIVE_CAPTURE);
-      document.removeEventListener("touchcancel", onTouchCancel, PASSIVE_CAPTURE);
-      document.removeEventListener("visibilitychange", endAllSessions);
-      window.removeEventListener("blur", endAllSessions);
-      document.removeEventListener("click", onClickCapture, true);
-      document.removeEventListener("dragstart", onDragStart, ACTIVE_CAPTURE);
+      for (const unbind of unbinds) unbind();
       sessionsRef.current.clear();
       stopHoldHeartbeat();
+      stopMomentum();
     };
   }, [passThrough, rootRef, surfaceRef, glowIntervalMs]);
 }
@@ -1450,7 +1567,7 @@ function burstMetrics(s, flow) {
     dirY = 0;
   }
   const swipe = Math.min(Math.max(touchSpeed, flow.speed) * 0.45, 1);
-  const baseRadius = (stopped ? 0.062 + speedNorm * 0.05 : isSwipe ? 0.068 + swipe * 0.12 : 0.065) * (0.9 + Math.random() * 0.22);
+  const baseRadius = (stopped ? 0.03 + speedNorm * 0.02 : isSwipe ? 0.032 + swipe * 0.045 : 0.03) * (0.9 + Math.random() * 0.22);
   return {
     stopped,
     impulse: impulse2,
@@ -1464,15 +1581,18 @@ function burstMetrics(s, flow) {
     perpY: dirX,
     swipe,
     baseRadius,
-    stretch: isSwipe ? 1 + swipe * (0.18 + motionBoost * 0.14 + Math.random() * 0.08) : 1,
+    stretch: isSwipe ? 1 + swipe * (0.22 + motionBoost * 0.18 + Math.random() * 0.08) : 1,
     burstCount: Math.round(
       (stopped ? BURST_COUNT * (0.7 + speedNorm * 0.3) : isSwipe ? BURST_COUNT + swipe * 6 + impulse2 * 2 : BURST_COUNT) * (0.82 + Math.random() * 0.28)
     ),
     inertiaBase: Math.min(
-      touchSpeed * 0.022 + impulse2 * 0.06 + (stopped ? speedNorm * 0.035 : 0),
-      0.11
+      touchSpeed * 0.02 + impulse2 * 0.04 + (stopped ? speedNorm * 0.03 : 0),
+      0.08
     ),
-    inheritScale: 6e-3 + speedNorm * 9e-3 + impulse2 * 0.012 + (stopped ? speedNorm * 0.014 : 0)
+    // Доля скорости курсора, которую наследует частица. Строго меньше 1:
+    // пятно размазывается по следу и догоняет курсор, а не обгоняет его.
+    inheritScale: 0.3 + speedNorm * 0.14 + impulse2 * 0.08 + (stopped ? speedNorm * 0.12 : 0),
+    lag: isSwipe ? speedNorm * 0.02 : 0
   };
 }
 
@@ -1576,8 +1696,8 @@ function makeParticle({ s, m, flow, rgb, seed, i }) {
   const omag = Math.hypot(ox, oy) || 1e-4;
   const outX = ox / omag;
   const outY = oy / omag;
-  const spd = 0.012 + Math.random() * 0.018 + m.swipe * (0.022 + Math.random() * 0.018) + dist * (0.12 + Math.random() * 0.1);
-  const mix = m.isSwipe ? 0.22 + m.motionBoost * 0.28 + Math.random() * 0.08 : 0;
+  const spd = 8e-3 + Math.random() * 0.012 + m.swipe * (0.01 + Math.random() * 0.01) + dist * (0.05 + Math.random() * 0.05);
+  const mix = m.isSwipe ? 0.14 + m.motionBoost * 0.16 + Math.random() * 0.06 : 0;
   const jitter = (Math.random() - 0.5) * 5e-3;
   let vx = (outX * (1 - mix) + m.dirX * mix) * spd + jitter;
   let vy = (outY * (1 - mix) + m.dirY * mix) * spd + jitter;
@@ -1588,14 +1708,15 @@ function makeParticle({ s, m, flow, rgb, seed, i }) {
     vx += tdx * m.inertiaBase * bias;
     vy += tdy * m.inertiaBase * bias;
     if (m.touchSpeed > 0.012 || m.stopped) {
-      const inherit = m.inheritScale * (0.75 + Math.random() * 0.35);
+      const inherit = m.inheritScale * (0.6 + Math.random() * 0.7);
       vx += s.dx * inherit;
       vy += s.dy * inherit;
     }
   }
+  const lag = m.lag * (0.35 + Math.random() * 0.9);
   return {
-    x: s.x + ox,
-    y: s.y + oy,
+    x: s.x + ox - m.dirX * lag,
+    y: s.y + oy - m.dirY * lag,
     vx,
     vy,
     life: 1,
@@ -1785,6 +1906,7 @@ function PadGlCanvas({ containerRef }) {
     }
     const resize = () => {
       const { width, height } = container.getBoundingClientRect();
+      if (width < 1 || height < 1) return;
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       canvas.width = Math.max(1, Math.floor(width * dpr));
       canvas.height = Math.max(1, Math.floor(height * dpr));
@@ -2039,6 +2161,7 @@ var CHAOSPAD_CSS = `
 
 .chaospad-pass-through .chaospad-surface {
 	pointer-events: none;
+	touch-action: auto;
 }
 
 .chaospad-surface {

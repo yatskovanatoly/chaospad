@@ -60,11 +60,11 @@ function addGrainLayer(
 }
 
 const BASE_VOICES = [
-	{ detune: 0, level: 0.26 },
-	{ detune: -8, level: 0.18 },
-	{ detune: 8, level: 0.18 },
-	{ detune: -16, level: 0.1 },
-	{ detune: 16, level: 0.1 },
+	{ detune: 0, level: 0.26, octave: 1 },
+	{ detune: -8, level: 0.18, octave: 1 },
+	{ detune: 8, level: 0.18, octave: 1 },
+	{ detune: -16, level: 0.1, octave: 1 },
+	{ detune: 16, level: 0.1, octave: 1 },
 ]
 
 const HARMONIC_VOICES = [

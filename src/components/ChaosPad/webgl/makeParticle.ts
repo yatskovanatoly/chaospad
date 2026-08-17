@@ -42,11 +42,11 @@ export function makeParticle({ s, m, flow, rgb, seed, i }: Ctx): Particle {
 	const outX = ox / omag
 	const outY = oy / omag
 	const spd =
-		0.012 +
-		Math.random() * 0.018 +
-		m.swipe * (0.022 + Math.random() * 0.018) +
-		dist * (0.12 + Math.random() * 0.1)
-	const mix = m.isSwipe ? 0.22 + m.motionBoost * 0.28 + Math.random() * 0.08 : 0
+		0.008 +
+		Math.random() * 0.012 +
+		m.swipe * (0.01 + Math.random() * 0.01) +
+		dist * (0.05 + Math.random() * 0.05)
+	const mix = m.isSwipe ? 0.14 + m.motionBoost * 0.16 + Math.random() * 0.06 : 0
 	const jitter = (Math.random() - 0.5) * 0.005
 
 	let vx = (outX * (1 - mix) + m.dirX * mix) * spd + jitter
@@ -59,15 +59,19 @@ export function makeParticle({ s, m, flow, rgb, seed, i }: Ctx): Particle {
 		vx += tdx * m.inertiaBase * bias
 		vy += tdy * m.inertiaBase * bias
 		if (m.touchSpeed > 0.012 || m.stopped) {
-			const inherit = m.inheritScale * (0.75 + Math.random() * 0.35)
+			// Разброс множителя растягивает пятно в хвост: часть частиц
+			// почти успевает за курсором, часть заметно отстаёт.
+			const inherit = m.inheritScale * (0.6 + Math.random() * 0.7)
 			vx += s.dx * inherit
 			vy += s.dy * inherit
 		}
 	}
 
+	const lag = m.lag * (0.35 + Math.random() * 0.9)
+
 	return {
-		x: s.x + ox,
-		y: s.y + oy,
+		x: s.x + ox - m.dirX * lag,
+		y: s.y + oy - m.dirY * lag,
 		vx,
 		vy,
 		life: 1,

@@ -22,6 +22,7 @@ const CHAOSPAD_CSS = `
 
 .chaospad-pass-through .chaospad-surface {
 	pointer-events: none;
+	touch-action: auto;
 }
 
 .chaospad-surface {

@@ -38,4 +38,5 @@ export type BurstMetrics = {
 	burstCount: number
 	inertiaBase: number
 	inheritScale: number
+	lag: number
 }

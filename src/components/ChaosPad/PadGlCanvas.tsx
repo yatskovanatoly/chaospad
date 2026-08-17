@@ -27,6 +27,9 @@ export default function PadGlCanvas({ containerRef }: Props) {
 
 		const resize = () => {
 			const { width, height } = container.getBoundingClientRect()
+			// Мобильные браузеры на схлопывании адресной строки/резинке успевают
+			// отдать нулевой размер — на нём буфер следа схлопывается в угол.
+			if (width < 1 || height < 1) return
 			const dpr = Math.min(window.devicePixelRatio || 1, 2)
 			canvas.width = Math.max(1, Math.floor(width * dpr))
 			canvas.height = Math.max(1, Math.floor(height * dpr))
