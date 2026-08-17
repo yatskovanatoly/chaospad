@@ -33,7 +33,7 @@ export function burstMetrics(
 			? 0.03 + speedNorm * 0.02
 			: isSwipe
 				? 0.032 + swipe * 0.045
-				: 0.03) *
+				: 0.046) *
 		(0.9 + Math.random() * 0.22)
 
 	return {
@@ -57,19 +57,18 @@ export function burstMetrics(
 				? BURST_COUNT * (0.7 + speedNorm * 0.3)
 				: isSwipe
 					? BURST_COUNT + swipe * 6 + impulse * 2
-					: BURST_COUNT) * (0.82 + Math.random() * 0.28),
+					: BURST_COUNT * 0.6) * (0.82 + Math.random() * 0.28),
 		),
 		inertiaBase: Math.min(
-			touchSpeed * 0.02 + impulse * 0.04 + (stopped ? speedNorm * 0.03 : 0),
-			0.08,
+			touchSpeed * 0.014 + impulse * 0.028 + (stopped ? speedNorm * 0.02 : 0),
+			0.055,
 		),
-		// Доля скорости курсора, которую наследует частица. Строго меньше 1:
-		// пятно размазывается по следу и догоняет курсор, а не обгоняет его.
 		inheritScale:
-			0.3 +
-			speedNorm * 0.14 +
-			impulse * 0.08 +
-			(stopped ? speedNorm * 0.12 : 0),
-		lag: isSwipe ? speedNorm * 0.02 : 0,
+			0.22 +
+			speedNorm * 0.1 +
+			impulse * 0.06 +
+			(stopped ? speedNorm * 0.08 : 0),
+		lag: isSwipe ? speedNorm * 0.015 : 0,
+		dim: isSwipe || stopped ? 0.85 + motionBoost * 0.15 : 0.5,
 	}
 }

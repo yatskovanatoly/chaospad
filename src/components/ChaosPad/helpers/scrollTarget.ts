@@ -19,7 +19,6 @@ function pageScroller(): Element | null {
 	const html = document.documentElement
 	const htmlStyle = getComputedStyle(html)
 	const bodyStyle = document.body ? getComputedStyle(document.body) : htmlStyle
-	// overflow у html/body каскадируется на вьюпорт: hidden режет скролл страницы
 	const clippedY =
 		CLIPS.test(htmlStyle.overflowY) || CLIPS.test(bodyStyle.overflowY)
 	const clippedX =
@@ -34,10 +33,6 @@ function pageScroller(): Element | null {
 	return canY || canX ? scroller : null
 }
 
-/**
- * Что нужно прокрутить под этой точкой: ближайший скроллящийся предок или
- * скроллер страницы. null — скроллить нечего.
- */
 export function findScrollTarget(
 	clientX: number,
 	clientY: number,
@@ -56,17 +51,12 @@ export function findScrollTarget(
 
 type Axis = 'scrollTop' | 'scrollLeft'
 
-/** Двигает одну ось, возвращая true, если элемент реально сдвинулся. */
 function scrollAxis(el: Element, axis: Axis, delta: number): boolean {
 	const before = el[axis]
 	el[axis] = before + delta
 	return el[axis] !== before
 }
 
-/**
- * Прокрутка с передачей странице той оси, по которой вложенный контейнер
- * упёрся в край.
- */
 export function scrollWithChaining(
 	el: Element,
 	dx: number,

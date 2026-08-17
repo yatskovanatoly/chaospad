@@ -1,7 +1,11 @@
 'use client'
 
 import { useChaospadConfig } from '@/context/ChaospadConfigContext'
-import { colors, getColorForUser, getUserId } from '@/components/WsContext/helpers/getUserParams'
+import {
+	FALLBACK_COLOR,
+	getColorForUser,
+	getUserId,
+} from '@/components/WsContext/helpers/getUserParams'
 import {
 	buildWsPayload,
 	parseWsMessage,
@@ -20,7 +24,7 @@ const WebSocketProvider = ({ children }: { children: React.ReactNode }) => {
 	const wsRef = useRef<WebSocket | null>(null)
 	const userIdRef = useRef(configUserId ?? getUserId())
 	const userId = userIdRef.current
-	const color = getColorForUser(userId) || colors[0]
+	const color = getColorForUser(userId) || FALLBACK_COLOR
 	const [message, setMessage] = useState<WSContextType['message']>(undefined)
 	const messageSeqRef = useRef(0)
 

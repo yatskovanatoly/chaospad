@@ -3,10 +3,6 @@
 import { Chaospad } from '@/Chaospad'
 import type { CSSProperties } from 'react'
 
-/**
- * Local-dev surface: pad overlay on top of deliberately scrollable content,
- * so pass-through scrolling can be checked on a real phone.
- */
 const SECTIONS = [
 	{
 		title: 'chaospad',
@@ -53,7 +49,6 @@ const nested: CSSProperties = {
 const Page = () => (
 	<div style={{ minHeight: '100dvh', background: '#000' }}>
 		<Chaospad />
-		{/* без position/z-index: пад остаётся поверх контента, как в бою */}
 		<main
 			style={{
 				maxWidth: 720,

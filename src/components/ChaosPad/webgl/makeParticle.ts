@@ -1,8 +1,9 @@
+import { normalizeParticleRgb } from '@/helpers/color'
 import { fbm } from './flowField'
 import type { BurstMetrics, FlowState, Particle } from './types'
 import type { SplatInput } from '../visual/types'
 
-const SEPIA_BASE: [number, number, number] = [0.84, 0.67, 0.44]
+const rgbCache = new Map<string, [number, number, number]>()
 
 type Ctx = {
 	s: SplatInput
@@ -41,9 +42,11 @@ export function makeParticle({ s, m, flow, rgb, seed, i }: Ctx): Particle {
 	const omag = Math.hypot(ox, oy) || 1e-4
 	const outX = ox / omag
 	const outY = oy / omag
+	const drift = m.isSwipe ? 0 : 0.03 + Math.random() * 0.035
 	const spd =
 		0.008 +
 		Math.random() * 0.012 +
+		drift +
 		m.swipe * (0.01 + Math.random() * 0.01) +
 		dist * (0.05 + Math.random() * 0.05)
 	const mix = m.isSwipe ? 0.14 + m.motionBoost * 0.16 + Math.random() * 0.06 : 0
@@ -59,8 +62,6 @@ export function makeParticle({ s, m, flow, rgb, seed, i }: Ctx): Particle {
 		vx += tdx * m.inertiaBase * bias
 		vy += tdy * m.inertiaBase * bias
 		if (m.touchSpeed > 0.012 || m.stopped) {
-			// Разброс множителя растягивает пятно в хвост: часть частиц
-			// почти успевает за курсором, часть заметно отстаёт.
 			const inherit = m.inheritScale * (0.6 + Math.random() * 0.7)
 			vx += s.dx * inherit
 			vy += s.dy * inherit
@@ -76,9 +77,9 @@ export function makeParticle({ s, m, flow, rgb, seed, i }: Ctx): Particle {
 		vy,
 		life: 1,
 		maxLife: 1.2 + m.motionBoost * 0.45 + (m.stopped ? 0.35 : 0) + Math.random(),
-		r: cr * (0.96 + Math.random() * 0.08),
-		g: cg * (0.96 + Math.random() * 0.08),
-		b: cb * (0.96 + Math.random() * 0.08),
+		r: cr * m.dim * (0.96 + Math.random() * 0.08),
+		g: cg * m.dim * (0.96 + Math.random() * 0.08),
+		b: cb * m.dim * (0.96 + Math.random() * 0.08),
 		size: 1.8 + Math.random() * 1.4,
 		flowX: m.dirX || flow.x,
 		flowY: m.dirY || flow.y,
@@ -87,7 +88,12 @@ export function makeParticle({ s, m, flow, rgb, seed, i }: Ctx): Particle {
 	}
 }
 
-export function splatColor(_s: SplatInput): [number, number, number] {
-	const v = 0.9 + Math.random() * 0.2
-	return [SEPIA_BASE[0] * v, SEPIA_BASE[1] * v, SEPIA_BASE[2] * v]
+export function splatColor(s: SplatInput): [number, number, number] {
+	const key = s.color ?? ''
+	let rgb = rgbCache.get(key)
+	if (!rgb) {
+		rgb = normalizeParticleRgb(key)
+		rgbCache.set(key, rgb)
+	}
+	return rgb
 }

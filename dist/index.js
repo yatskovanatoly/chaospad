@@ -244,14 +244,87 @@ function createSpatialChain(ctx, dryTarget, sendTarget) {
   };
 }
 
+// src/helpers/color.ts
+var PARTICLE_LIGHTNESS = 0.68;
+var PARTICLE_CHROMA = 0.17;
+var FALLBACK_HUE = 45;
+var clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
+var toLinear = (v) => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+var toGamma = (v) => v <= 31308e-7 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055;
+function oklabToLinear(l, a, b) {
+  const lc = (l + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const mc = (l - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const sc = (l - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * lc - 3.3077115913 * mc + 0.2309699292 * sc,
+    -1.2684380046 * lc + 2.6097574011 * mc - 0.3413193965 * sc,
+    -0.0041960863 * lc - 0.7034186147 * mc + 1.707614701 * sc
+  ];
+}
+function linearToOklab(r, g, b) {
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s
+  ];
+}
+var inGamut = ([r, g, b]) => r >= -1e-4 && r <= 1.0001 && g >= -1e-4 && g <= 1.0001 && b >= -1e-4 && b <= 1.0001;
+function oklchToRgb(l, chroma, hue) {
+  const rad = hue * Math.PI / 180;
+  let c = chroma;
+  for (let i = 0; i < 24; i++) {
+    const linear = oklabToLinear(l, c * Math.cos(rad), c * Math.sin(rad));
+    if (inGamut(linear) || c <= 0) {
+      return [
+        clamp01(toGamma(clamp01(linear[0]))),
+        clamp01(toGamma(clamp01(linear[1]))),
+        clamp01(toGamma(clamp01(linear[2])))
+      ];
+    }
+    c -= chroma / 24;
+  }
+  return [l, l, l];
+}
+function parseCssRgb(css) {
+  if (!css) return null;
+  const hex = css.trim().replace("#", "");
+  const full = hex.length === 3 ? hex.split("").map((c) => c + c).join("") : hex;
+  if (full.length !== 6 || !/^[\da-f]{6}$/i.test(full)) return null;
+  return [
+    parseInt(full.slice(0, 2), 16) / 255,
+    parseInt(full.slice(2, 4), 16) / 255,
+    parseInt(full.slice(4, 6), 16) / 255
+  ];
+}
+function hueOfCss(css) {
+  const rgb = parseCssRgb(css);
+  if (!rgb) return FALLBACK_HUE;
+  const [, a, b] = linearToOklab(
+    toLinear(rgb[0]),
+    toLinear(rgb[1]),
+    toLinear(rgb[2])
+  );
+  if (Math.hypot(a, b) < 1e-4) return FALLBACK_HUE;
+  const deg = Math.atan2(b, a) * 180 / Math.PI;
+  return deg < 0 ? deg + 360 : deg;
+}
+function hueToCss(hue) {
+  const rgb = oklchToRgb(PARTICLE_LIGHTNESS, PARTICLE_CHROMA, hue);
+  const hex = rgb.map(
+    (v) => Math.round(v * 255).toString(16).padStart(2, "0")
+  ).join("");
+  return `#${hex}`;
+}
+function normalizeParticleRgb(css) {
+  return oklchToRgb(PARTICLE_LIGHTNESS, PARTICLE_CHROMA, hueOfCss(css));
+}
+
 // src/components/WsContext/helpers/getUserParams.ts
-var colors = [
-  "#3b82f6",
-  "#ef4444",
-  "#22c55e",
-  "#eab308",
-  "#a855f7"
-];
+var HUE_STEP = 137.508;
+var FALLBACK_COLOR = hueToCss(45);
 function hashUserIndex(id, size) {
   if (!id || size <= 0) return 0;
   let hash2 = 0;
@@ -262,7 +335,7 @@ function hashUserIndex(id, size) {
 }
 var getColorForUser = (id) => {
   if (!id) return void 0;
-  return colors[hashUserIndex(id, colors.length)];
+  return hueToCss(hashUserIndex(id, 997) * HUE_STEP % 360);
 };
 var getUserId = () => {
   try {
@@ -1447,9 +1520,9 @@ void main() {
 	float d2 = dot(uv, uv);
 	float core = exp(-d2 * 16.0);
 	float halo = exp(-d2 * 5.5);
-	float energy = (core * 0.9 + halo * 0.1) * pow(vLife, 0.82);
-	float alpha = energy * 0.88;
-	vec3 rgb = vColor * energy * 0.92;
+	float energy = (core * 0.72 + halo * 0.28) * pow(vLife, 0.85);
+	float alpha = energy * 0.62;
+	vec3 rgb = vColor * (0.78 + 0.22 * core);
 	outColor = vec4(rgb, alpha);
 }
 `;
@@ -1542,7 +1615,7 @@ function burstMetrics(s, flow) {
     dirY = 0;
   }
   const swipe = Math.min(Math.max(touchSpeed, flow.speed) * 0.45, 1);
-  const baseRadius = (stopped ? 0.03 + speedNorm * 0.02 : isSwipe ? 0.032 + swipe * 0.045 : 0.03) * (0.9 + Math.random() * 0.22);
+  const baseRadius = (stopped ? 0.03 + speedNorm * 0.02 : isSwipe ? 0.032 + swipe * 0.045 : 0.046) * (0.9 + Math.random() * 0.22);
   return {
     stopped,
     impulse: impulse2,
@@ -1558,16 +1631,15 @@ function burstMetrics(s, flow) {
     baseRadius,
     stretch: isSwipe ? 1 + swipe * (0.22 + motionBoost * 0.18 + Math.random() * 0.08) : 1,
     burstCount: Math.round(
-      (stopped ? BURST_COUNT * (0.7 + speedNorm * 0.3) : isSwipe ? BURST_COUNT + swipe * 6 + impulse2 * 2 : BURST_COUNT) * (0.82 + Math.random() * 0.28)
+      (stopped ? BURST_COUNT * (0.7 + speedNorm * 0.3) : isSwipe ? BURST_COUNT + swipe * 6 + impulse2 * 2 : BURST_COUNT * 0.6) * (0.82 + Math.random() * 0.28)
     ),
     inertiaBase: Math.min(
-      touchSpeed * 0.02 + impulse2 * 0.04 + (stopped ? speedNorm * 0.03 : 0),
-      0.08
+      touchSpeed * 0.014 + impulse2 * 0.028 + (stopped ? speedNorm * 0.02 : 0),
+      0.055
     ),
-    // Доля скорости курсора, которую наследует частица. Строго меньше 1:
-    // пятно размазывается по следу и догоняет курсор, а не обгоняет его.
-    inheritScale: 0.3 + speedNorm * 0.14 + impulse2 * 0.08 + (stopped ? speedNorm * 0.12 : 0),
-    lag: isSwipe ? speedNorm * 0.02 : 0
+    inheritScale: 0.22 + speedNorm * 0.1 + impulse2 * 0.06 + (stopped ? speedNorm * 0.08 : 0),
+    lag: isSwipe ? speedNorm * 0.015 : 0,
+    dim: isSwipe || stopped ? 0.85 + motionBoost * 0.15 : 0.5
   };
 }
 
@@ -1650,7 +1722,7 @@ var sampleFlow = (x, y, t, seed) => {
 };
 
 // src/components/ChaosPad/webgl/makeParticle.ts
-var SEPIA_BASE = [0.84, 0.67, 0.44];
+var rgbCache = /* @__PURE__ */ new Map();
 function makeParticle({ s, m, flow, rgb, seed, i }) {
   const [cr, cg, cb] = rgb;
   const pSeed = seed + i * 1.618 + Math.random() * 7;
@@ -1671,7 +1743,8 @@ function makeParticle({ s, m, flow, rgb, seed, i }) {
   const omag = Math.hypot(ox, oy) || 1e-4;
   const outX = ox / omag;
   const outY = oy / omag;
-  const spd = 8e-3 + Math.random() * 0.012 + m.swipe * (0.01 + Math.random() * 0.01) + dist * (0.05 + Math.random() * 0.05);
+  const drift = m.isSwipe ? 0 : 0.03 + Math.random() * 0.035;
+  const spd = 8e-3 + Math.random() * 0.012 + drift + m.swipe * (0.01 + Math.random() * 0.01) + dist * (0.05 + Math.random() * 0.05);
   const mix = m.isSwipe ? 0.14 + m.motionBoost * 0.16 + Math.random() * 0.06 : 0;
   const jitter = (Math.random() - 0.5) * 5e-3;
   let vx = (outX * (1 - mix) + m.dirX * mix) * spd + jitter;
@@ -1696,9 +1769,9 @@ function makeParticle({ s, m, flow, rgb, seed, i }) {
     vy,
     life: 1,
     maxLife: 1.2 + m.motionBoost * 0.45 + (m.stopped ? 0.35 : 0) + Math.random(),
-    r: cr * (0.96 + Math.random() * 0.08),
-    g: cg * (0.96 + Math.random() * 0.08),
-    b: cb * (0.96 + Math.random() * 0.08),
+    r: cr * m.dim * (0.96 + Math.random() * 0.08),
+    g: cg * m.dim * (0.96 + Math.random() * 0.08),
+    b: cb * m.dim * (0.96 + Math.random() * 0.08),
     size: 1.8 + Math.random() * 1.4,
     flowX: m.dirX || flow.x,
     flowY: m.dirY || flow.y,
@@ -1706,9 +1779,15 @@ function makeParticle({ s, m, flow, rgb, seed, i }) {
     drag: 0.975 + Math.random() * 0.012
   };
 }
-function splatColor(_s) {
-  const v = 0.9 + Math.random() * 0.2;
-  return [SEPIA_BASE[0] * v, SEPIA_BASE[1] * v, SEPIA_BASE[2] * v];
+function splatColor(s) {
+  var _a;
+  const key = (_a = s.color) != null ? _a : "";
+  let rgb = rgbCache.get(key);
+  if (!rgb) {
+    rgb = normalizeParticleRgb(key);
+    rgbCache.set(key, rgb);
+  }
+  return rgb;
 }
 
 // src/components/ChaosPad/webgl/spawnBurst.ts
@@ -1933,7 +2012,7 @@ function ChaosPad({ className, style }) {
 }
 
 // src/components/WsContext/helpers/wsMessage.ts
-var clamp01 = (n) => Math.min(1, Math.max(0, n));
+var clamp012 = (n) => Math.min(1, Math.max(0, n));
 var resolveCoords = (data) => {
   if (typeof data.nx === "number" && typeof data.ny === "number") {
     return { nx: data.nx, ny: data.ny };
@@ -1956,8 +2035,8 @@ function parseWsMessage(raw) {
       userId: data.userId,
       type: "stop",
       color: data.color,
-      nx: coords2 ? clamp01(coords2.nx) : 0,
-      ny: coords2 ? clamp01(coords2.ny) : 0
+      nx: coords2 ? clamp012(coords2.nx) : 0,
+      ny: coords2 ? clamp012(coords2.ny) : 0
     };
   }
   const coords = resolveCoords(data);
@@ -1968,8 +2047,8 @@ function parseWsMessage(raw) {
     userId: data.userId,
     type: data.type,
     color: data.color,
-    nx: clamp01(coords.nx),
-    ny: clamp01(coords.ny)
+    nx: clamp012(coords.nx),
+    ny: clamp012(coords.ny)
   };
 }
 function buildWsPayload({
@@ -2001,7 +2080,7 @@ var WebSocketProvider = ({ children }) => {
   const wsRef = useRef7(null);
   const userIdRef = useRef7(configUserId != null ? configUserId : getUserId());
   const userId = userIdRef.current;
-  const color = getColorForUser(userId) || colors[0];
+  const color = getColorForUser(userId) || FALLBACK_COLOR;
   const [message, setMessage] = useState3(void 0);
   const messageSeqRef = useRef7(0);
   const typeRef = useRef7(type);

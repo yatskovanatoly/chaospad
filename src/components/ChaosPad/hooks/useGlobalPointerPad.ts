@@ -16,7 +16,6 @@ const FRAME_MS = 1000 / 60
 const VELOCITY_SMOOTH = 0.6
 const MOMENTUM_FRICTION = 0.94
 const MOMENTUM_MIN_PX = 0.4
-/** Палец замер перед отрывом — инерцию не запускаем. */
 const MOMENTUM_STALE_MS = 100
 
 const PASSIVE_CAPTURE = { capture: true, passive: true } as const
@@ -31,7 +30,6 @@ type PointerSession = {
 	isTouch: boolean
 }
 
-/** Скролл, который пад ведёт сам, вместо того чтобы отдать жест браузеру. */
 type ScrollGesture = {
 	el: Element
 	lastX: number
@@ -116,8 +114,6 @@ export function useGlobalPointerPad(
 			holdIntervalRef.current = setInterval(emitHoldMove, glowIntervalMs)
 		}
 
-		// Клик после драга гасим только для мыши: у тача синтетический клик
-		// и так не доезжает, потому что touchmove отменён.
 		const suppressesClick = (session: PointerSession) =>
 			passThrough && session.isDrag && !session.isTouch
 
@@ -182,7 +178,6 @@ export function useGlobalPointerPad(
 		const driveScroll = (touch: Touch, at: number) => {
 			if (!scroll) return
 
-			// Палец вверх — контент вверх: дельта скролла обратна дельте пальца.
 			const dx = scroll.lastX - touch.clientX
 			const dy = scroll.lastY - touch.clientY
 			const dt = Math.max(at - scroll.lastAt, 1)
@@ -239,7 +234,6 @@ export function useGlobalPointerPad(
 			}
 
 			if (!passThrough || session.isDrag) {
-				// Тач ведёт touchmove — там же и preventDefault, и скролл.
 				if (!passThrough || !session.isTouch) e.preventDefault()
 				emit(e.clientX, e.clientY, 'move')
 			}
@@ -254,7 +248,6 @@ export function useGlobalPointerPad(
 		const onPointerCancel = (e: PointerEvent) => {
 			const session = sessionsRef.current.get(e.pointerId)
 			if (!session) return
-			// Тач-сессию ведут touch-события: pointercancel её не рвёт.
 			if (passThrough && session.isTouch) return
 			endSession(e.pointerId, e.clientX, e.clientY, e)
 		}
@@ -267,7 +260,6 @@ export function useGlobalPointerPad(
 			const touch = e.touches[0]
 			if (!touch) return
 
-			// Мультитач (пинч/зум) отдаём браузеру целиком.
 			if (e.touches.length > 1) {
 				scroll = null
 				return
@@ -288,9 +280,6 @@ export function useGlobalPointerPad(
 				}
 			}
 
-			// Жест не отдаём браузеру ни при каком раскладе: на нативном скролле
-			// мобильный движок морозит главный поток вместе с rAF, и частицы
-			// застывают на месте до конца инерции. Скроллим сами.
 			e.preventDefault()
 			if (passThrough) driveScroll(touch, e.timeStamp)
 
@@ -354,7 +343,6 @@ export function useGlobalPointerPad(
 		bind(target, 'pointermove', onPointerMove, ACTIVE_CAPTURE)
 		bind(target, 'pointerup', onPointerUp, ACTIVE_CAPTURE)
 		bind(target, 'pointercancel', onPointerCancel, PASSIVE_CAPTURE)
-		// touchmove non-passive: скролл под падом ведём вручную.
 		bind(document, 'touchmove', onTouchMove, ACTIVE_CAPTURE)
 		bind(document, 'touchcancel', onTouchCancel, PASSIVE_CAPTURE)
 		bind(document, 'visibilitychange', endAllSessions, false)

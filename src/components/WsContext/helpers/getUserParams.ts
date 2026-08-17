@@ -1,10 +1,8 @@
-export const colors = [
-	'#3b82f6',
-	'#ef4444',
-	'#22c55e',
-	'#eab308',
-	'#a855f7',
-]
+import { hueToCss } from '@/helpers/color'
+
+const HUE_STEP = 137.508
+
+export const FALLBACK_COLOR = hueToCss(45)
 
 export function hashUserIndex(id: string | undefined, size: number): number {
 	if (!id || size <= 0) return 0
@@ -17,7 +15,7 @@ export function hashUserIndex(id: string | undefined, size: number): number {
 
 export const getColorForUser = (id: string | undefined) => {
 	if (!id) return undefined
-	return colors[hashUserIndex(id, colors.length)]
+	return hueToCss((hashUserIndex(id, 997) * HUE_STEP) % 360)
 }
 
 export const getUserId = () => {
