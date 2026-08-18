@@ -53,9 +53,28 @@ type Axis = 'scrollTop' | 'scrollLeft'
 
 export type ScrollDelta = { dx: number; dy: number }
 
+let instantScroll: boolean | null = null
+
+function applyScroll(el: Element, axis: Axis, value: number) {
+	if (instantScroll !== false) {
+		try {
+			el.scrollTo({
+				[axis === 'scrollTop' ? 'top' : 'left']: value,
+				behavior: 'instant' as ScrollBehavior,
+			})
+			instantScroll = true
+			return
+		} catch {
+			instantScroll = false
+		}
+	}
+
+	el[axis] = value
+}
+
 function scrollAxis(el: Element, axis: Axis, delta: number): number {
 	const before = el[axis]
-	el[axis] = before + delta
+	applyScroll(el, axis, before + delta)
 	return el[axis] - before
 }
 

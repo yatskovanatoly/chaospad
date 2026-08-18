@@ -1086,9 +1086,25 @@ function findScrollTarget(clientX, clientY) {
   }
   return pageScroller();
 }
+var instantScroll = null;
+function applyScroll(el, axis, value) {
+  if (instantScroll !== false) {
+    try {
+      el.scrollTo({
+        [axis === "scrollTop" ? "top" : "left"]: value,
+        behavior: "instant"
+      });
+      instantScroll = true;
+      return;
+    } catch (e) {
+      instantScroll = false;
+    }
+  }
+  el[axis] = value;
+}
 function scrollAxis(el, axis, delta) {
   const before = el[axis];
-  el[axis] = before + delta;
+  applyScroll(el, axis, before + delta);
   return el[axis] - before;
 }
 function canScrollAxis(el, axis, delta) {
