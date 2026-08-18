@@ -1015,10 +1015,11 @@ function scrollWithChaining(el, dx, dy) {
 import { useLayoutEffect as useLayoutEffect3, useRef as useRef3 } from "react";
 var DRAG_THRESHOLD_PX = 10;
 var CLICK_SUPPRESS_MS = 400;
-var FRAME_MS = 1e3 / 60;
-var VELOCITY_SMOOTH = 0.6;
-var MOMENTUM_FRICTION = 0.94;
-var MOMENTUM_MIN_PX = 0.4;
+var VELOCITY_SMOOTH = 0.5;
+var MOMENTUM_DECAY_PER_MS = 0.998;
+var MOMENTUM_MIN_SPEED = 0.02;
+var MOMENTUM_MAX_SPEED = 4;
+var MOMENTUM_MAX_STEP_MS = 64;
 var MOMENTUM_STALE_MS = 100;
 var PASSIVE_CAPTURE = { capture: true, passive: true };
 var ACTIVE_CAPTURE = { capture: true, passive: false };
@@ -1049,14 +1050,20 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
     };
     const startMomentum = (el, vx, vy) => {
       stopMomentum();
-      let mx = vx;
-      let my = vy;
-      if (Math.hypot(mx, my) < MOMENTUM_MIN_PX) return;
-      const step = () => {
-        mx *= MOMENTUM_FRICTION;
-        my *= MOMENTUM_FRICTION;
-        const moved = scrollWithChaining(el, mx, my);
-        if (!moved || Math.hypot(mx, my) < MOMENTUM_MIN_PX) {
+      const speed = Math.hypot(vx, vy);
+      if (speed < MOMENTUM_MIN_SPEED) return;
+      const scale = speed > MOMENTUM_MAX_SPEED ? MOMENTUM_MAX_SPEED / speed : 1;
+      let mx = vx * scale;
+      let my = vy * scale;
+      let last = performance.now();
+      const step = (now) => {
+        const dt = Math.min(Math.max(now - last, 1), MOMENTUM_MAX_STEP_MS);
+        last = now;
+        const moved = scrollWithChaining(el, mx * dt, my * dt);
+        const decay = MOMENTUM_DECAY_PER_MS ** dt;
+        mx *= decay;
+        my *= decay;
+        if (!moved || Math.hypot(mx, my) < MOMENTUM_MIN_SPEED) {
           momentumRaf = 0;
           return;
         }
@@ -1138,9 +1145,8 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       scroll.lastY = touch.clientY;
       scroll.lastAt = at;
       scrollWithChaining(scroll.el, dx, dy);
-      const perFrame = FRAME_MS / dt;
-      scroll.vx += (dx * perFrame - scroll.vx) * VELOCITY_SMOOTH;
-      scroll.vy += (dy * perFrame - scroll.vy) * VELOCITY_SMOOTH;
+      scroll.vx += (dx / dt - scroll.vx) * VELOCITY_SMOOTH;
+      scroll.vy += (dy / dt - scroll.vy) * VELOCITY_SMOOTH;
     };
     const onPointerDown = (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;

@@ -12,10 +12,11 @@ import { useLayoutEffect, useRef, type RefObject } from 'react'
 const DRAG_THRESHOLD_PX = 10
 const CLICK_SUPPRESS_MS = 400
 
-const FRAME_MS = 1000 / 60
-const VELOCITY_SMOOTH = 0.6
-const MOMENTUM_FRICTION = 0.94
-const MOMENTUM_MIN_PX = 0.4
+const VELOCITY_SMOOTH = 0.5
+const MOMENTUM_DECAY_PER_MS = 0.998
+const MOMENTUM_MIN_SPEED = 0.02
+const MOMENTUM_MAX_SPEED = 4
+const MOMENTUM_MAX_STEP_MS = 64
 const MOMENTUM_STALE_MS = 100
 
 const PASSIVE_CAPTURE = { capture: true, passive: true } as const
@@ -74,15 +75,24 @@ export function useGlobalPointerPad(
 
 		const startMomentum = (el: Element, vx: number, vy: number) => {
 			stopMomentum()
-			let mx = vx
-			let my = vy
-			if (Math.hypot(mx, my) < MOMENTUM_MIN_PX) return
+			const speed = Math.hypot(vx, vy)
+			if (speed < MOMENTUM_MIN_SPEED) return
 
-			const step = () => {
-				mx *= MOMENTUM_FRICTION
-				my *= MOMENTUM_FRICTION
-				const moved = scrollWithChaining(el, mx, my)
-				if (!moved || Math.hypot(mx, my) < MOMENTUM_MIN_PX) {
+			const scale = speed > MOMENTUM_MAX_SPEED ? MOMENTUM_MAX_SPEED / speed : 1
+			let mx = vx * scale
+			let my = vy * scale
+			let last = performance.now()
+
+			const step = (now: number) => {
+				const dt = Math.min(Math.max(now - last, 1), MOMENTUM_MAX_STEP_MS)
+				last = now
+
+				const moved = scrollWithChaining(el, mx * dt, my * dt)
+				const decay = MOMENTUM_DECAY_PER_MS ** dt
+				mx *= decay
+				my *= decay
+
+				if (!moved || Math.hypot(mx, my) < MOMENTUM_MIN_SPEED) {
 					momentumRaf = 0
 					return
 				}
@@ -187,9 +197,8 @@ export function useGlobalPointerPad(
 			scroll.lastAt = at
 			scrollWithChaining(scroll.el, dx, dy)
 
-			const perFrame = FRAME_MS / dt
-			scroll.vx += (dx * perFrame - scroll.vx) * VELOCITY_SMOOTH
-			scroll.vy += (dy * perFrame - scroll.vy) * VELOCITY_SMOOTH
+			scroll.vx += (dx / dt - scroll.vx) * VELOCITY_SMOOTH
+			scroll.vy += (dy / dt - scroll.vy) * VELOCITY_SMOOTH
 		}
 
 		const onPointerDown = (e: PointerEvent) => {
