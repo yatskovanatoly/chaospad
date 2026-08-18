@@ -6,6 +6,7 @@ import { createPresetVoice, type PresetId } from './presets/catalog'
 import type { PresetVoice } from './presets/types'
 
 const ATTACK_S = 0.72
+const AMP_SMOOTH = 0.08
 
 export class Voice {
 	private readonly preset: PresetVoice
@@ -13,6 +14,7 @@ export class Voice {
 	private readonly spatial: ReturnType<typeof createSpatialChain>
 	private readonly engine: AudioEngine
 	private readonly route: ReturnType<AudioEngine['createVoiceRoute']>
+	private readonly attackEndsAt: number
 	private releaseTimer?: ReturnType<typeof setTimeout>
 	quantize: QuantizeMode
 
@@ -35,9 +37,10 @@ export class Voice {
 		const params = getPadParams(position.nx, position.ny, quantize, presetId)
 		this.spatial.setParams(params.pan, params.reverbSend)
 		const now = ctx.currentTime
+		this.attackEndsAt = now + ATTACK_S
 		this.preset.setParams({ freq: params.freq, amp: 0 })
 		this.preset.output.gain.setValueAtTime(0, now)
-		this.preset.output.gain.linearRampToValueAtTime(params.amp, now + ATTACK_S)
+		this.preset.output.gain.linearRampToValueAtTime(params.amp, this.attackEndsAt)
 		this.preset.start(now + 0.001)
 	}
 
@@ -59,6 +62,22 @@ export class Voice {
 	private applyParams(params: ReturnType<typeof getPadParams>) {
 		this.preset.setParams({ freq: params.freq, amp: params.amp })
 		this.spatial.setParams(params.pan, params.reverbSend)
+		this.setAmp(params.amp)
+	}
+
+	private setAmp(amp: number) {
+		const ctx = this.engine.getContextForVoice()
+		const gain = this.preset.output.gain
+		const now = ctx.currentTime
+
+		if (now < this.attackEndsAt) {
+			gain.cancelScheduledValues(now)
+			gain.setValueAtTime(gain.value, now)
+			gain.linearRampToValueAtTime(amp, this.attackEndsAt)
+			return
+		}
+
+		gain.setTargetAtTime(amp, now, AMP_SMOOTH)
 	}
 
 	private dispose() {

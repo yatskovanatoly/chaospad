@@ -654,6 +654,7 @@ function createPresetVoice(ctx, presetId) {
 
 // src/components/AudioEngineContext/Voice.ts
 var ATTACK_S = 0.72;
+var AMP_SMOOTH = 0.08;
 var Voice = class {
   constructor(engine, position, quantize, presetId) {
     this.engine = engine;
@@ -667,9 +668,10 @@ var Voice = class {
     const params = getPadParams(position.nx, position.ny, quantize, presetId);
     this.spatial.setParams(params.pan, params.reverbSend);
     const now = ctx.currentTime;
+    this.attackEndsAt = now + ATTACK_S;
     this.preset.setParams({ freq: params.freq, amp: 0 });
     this.preset.output.gain.setValueAtTime(0, now);
-    this.preset.output.gain.linearRampToValueAtTime(params.amp, now + ATTACK_S);
+    this.preset.output.gain.linearRampToValueAtTime(params.amp, this.attackEndsAt);
     this.preset.start(now + 1e-3);
   }
   updatePosition(nx, ny) {
@@ -688,6 +690,19 @@ var Voice = class {
   applyParams(params) {
     this.preset.setParams({ freq: params.freq, amp: params.amp });
     this.spatial.setParams(params.pan, params.reverbSend);
+    this.setAmp(params.amp);
+  }
+  setAmp(amp) {
+    const ctx = this.engine.getContextForVoice();
+    const gain = this.preset.output.gain;
+    const now = ctx.currentTime;
+    if (now < this.attackEndsAt) {
+      gain.cancelScheduledValues(now);
+      gain.setValueAtTime(gain.value, now);
+      gain.linearRampToValueAtTime(amp, this.attackEndsAt);
+      return;
+    }
+    gain.setTargetAtTime(amp, now, AMP_SMOOTH);
   }
   dispose() {
     this.preset.dispose();
