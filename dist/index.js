@@ -203,13 +203,14 @@ function resetGestureUnlock() {
 }
 
 // src/components/AudioEngineContext/helpers/getSoundParams.ts
+var VOLUME_PER_HEIGHT = 2.5;
 var getSoundParamsFromXY = (nx, ny) => {
   const minFreq = 174;
   const maxFreq = 349;
   const x = Math.min(1, Math.max(0, nx));
   const y = Math.min(1, Math.max(0, ny));
   const freq = minFreq * Math.pow(maxFreq / minFreq, x);
-  const amp = 1 - y;
+  const amp = Math.min(1, (1 - y) * VOLUME_PER_HEIGHT);
   return { freq, amp, x, y };
 };
 
@@ -220,6 +221,7 @@ var quantizeFreq = (freq, mode) => {
 };
 
 // src/components/AudioEngineContext/helpers/padParams.ts
+var MAX_AMP = 0.56;
 var REVERB_BY_PRESET = {
   0: { base: 0.68, range: 0.3 },
   1: { base: 0.48, range: 0.24 }
@@ -229,7 +231,7 @@ function getPadParams(nx, ny, quantize = "none", presetId = 0) {
   const reverb = REVERB_BY_PRESET[presetId];
   return {
     freq: quantizeFreq(rawFreq, quantize),
-    amp: 0.22 + amp * 0.34,
+    amp: amp * MAX_AMP,
     pan: (nx - 0.5) * 1.2,
     reverbSend: reverb.base + ny * reverb.range
   };

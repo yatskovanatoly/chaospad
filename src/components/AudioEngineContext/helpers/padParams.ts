@@ -9,6 +9,8 @@ export type PadParams = {
 	reverbSend: number
 }
 
+const MAX_AMP = 0.56
+
 const REVERB_BY_PRESET: Record<PresetId, { base: number; range: number }> = {
 	0: { base: 0.68, range: 0.3 },
 	1: { base: 0.48, range: 0.24 },
@@ -24,7 +26,7 @@ export function getPadParams(
 	const reverb = REVERB_BY_PRESET[presetId]
 	return {
 		freq: quantizeFreq(rawFreq, quantize),
-		amp: 0.22 + amp * 0.34,
+		amp: amp * MAX_AMP,
 		pan: (nx - 0.5) * 1.2,
 		reverbSend: reverb.base + ny * reverb.range,
 	}
