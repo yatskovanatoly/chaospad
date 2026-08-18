@@ -143,7 +143,11 @@ function useChaospadConfig() {
 }
 
 // src/components/AudioEngineContext/helpers/createImpulseResponse.ts
+var cache = /* @__PURE__ */ new Map();
 var createImpulseResponse = (ctx, duration = 5, decay = 3.2) => {
+  const key = `${ctx.sampleRate}:${duration}:${decay}`;
+  const cached = cache.get(key);
+  if (cached) return cached;
   const rate = ctx.sampleRate;
   const length = rate * duration;
   const impulse2 = ctx.createBuffer(2, length, rate);
@@ -153,18 +157,20 @@ var createImpulseResponse = (ctx, duration = 5, decay = 3.2) => {
       channel[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
     }
   }
+  cache.set(key, impulse2);
   return impulse2;
 };
 
 // src/components/AudioEngineContext/helpers/unlockAudioContext.ts
 var SILENT_WAV = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
 var silentAudio = null;
+var gestureRitualDone = false;
 function createAudioContext() {
   var _a;
   const w = window;
   const AC = (_a = window.AudioContext) != null ? _a : w.webkitAudioContext;
   if (!AC) throw new Error("Web Audio API unavailable");
-  return new AC();
+  return new AC({ latencyHint: "interactive" });
 }
 function setPlaybackAudioSession() {
   const nav = navigator;
@@ -177,8 +183,10 @@ function setPlaybackAudioSession() {
 function primeDisposableContext() {
   try {
     const temp = createAudioContext();
-    void temp.resume().finally(() => {
-      void temp.close();
+    void temp.resume().catch(() => {
+    }).finally(() => {
+      void temp.close().catch(() => {
+      });
     });
   } catch (e) {
   }
@@ -194,12 +202,7 @@ function playSilentHtmlAudio() {
   void silentAudio.play().catch(() => {
   });
 }
-function unlockAudioForGesture(ctx) {
-  setPlaybackAudioSession();
-  primeDisposableContext();
-  playSilentHtmlAudio();
-  if (!ctx) return;
-  void ctx.resume();
+function primeSilentBuffer(ctx) {
   try {
     const buffer = ctx.createBuffer(1, 1, 22050);
     const source = ctx.createBufferSource();
@@ -208,6 +211,20 @@ function unlockAudioForGesture(ctx) {
     source.start(0);
   } catch (e) {
   }
+}
+function unlockAudioForGesture(ctx) {
+  if (!gestureRitualDone) {
+    gestureRitualDone = true;
+    setPlaybackAudioSession();
+    primeDisposableContext();
+    playSilentHtmlAudio();
+    if (ctx) primeSilentBuffer(ctx);
+  }
+  if (ctx && ctx.state !== "running") void ctx.resume().catch(() => {
+  });
+}
+function resetGestureUnlock() {
+  gestureRitualDone = false;
 }
 
 // src/components/AudioEngineContext/helpers/getSoundParams.ts
@@ -373,7 +390,16 @@ var getUserId = () => {
 
 // src/components/AudioEngineContext/presets/padShared.ts
 var PAD_SMOOTH = 0.11;
-function createGrainBuffer(ctx, seconds = 2.4) {
+var grainBuffers = /* @__PURE__ */ new Map();
+function getGrainBuffer(ctx, seconds = 2.4) {
+  const key = `${ctx.sampleRate}:${seconds}`;
+  const cached = grainBuffers.get(key);
+  if (cached) return cached;
+  const buffer = createGrainBuffer(ctx, seconds);
+  grainBuffers.set(key, buffer);
+  return buffer;
+}
+function createGrainBuffer(ctx, seconds) {
   const len = Math.floor(ctx.sampleRate * seconds);
   const buf = ctx.createBuffer(1, len, ctx.sampleRate);
   const data = buf.getChannelData(0);
@@ -399,6 +425,7 @@ function addGrainLayer(ctx, source, out, filter, level) {
   const node = ctx.createBufferSource();
   node.buffer = source;
   node.loop = true;
+  node.loopEnd = source.duration;
   const gain = ctx.createGain();
   gain.gain.value = level;
   node.connect(filter);
@@ -475,7 +502,7 @@ function createPadVoice(ctx, opts) {
     tail = peak;
   }
   tail.connect(out);
-  const grainBuffer = createGrainBuffer(ctx);
+  const grainBuffer = getGrainBuffer(ctx);
   const grainBus = ctx.createGain();
   grainBus.connect(out);
   const bodyFilter = ctx.createBiquadFilter();
@@ -552,7 +579,9 @@ function createPadVoice(ctx, opts) {
     start(when) {
       oscs.forEach(({ osc }) => osc.start(when));
       lfos.forEach((lfo) => lfo.start(when));
-      grains.forEach(({ node }) => node.start(when));
+      grains.forEach(
+        ({ node }) => node.start(when, Math.random() * grainBuffer.duration)
+      );
     },
     stop(_release, when) {
       const end = when + _release + 0.08;
@@ -682,16 +711,33 @@ var AudioEngine = class {
     this.voiceRoutes = [];
   }
   unlock() {
+    const ctx = this.ensureReady();
+    unlockAudioForGesture(ctx);
+    return ctx;
+  }
+  ensureReady() {
     if (!this.ctx) this.ctx = createAudioContext();
     if (!this.graphReady) {
       this.initGraph();
       this.graphReady = true;
     }
-    unlockAudioForGesture(this.ctx);
     return this.ctx;
+  }
+  prewarm() {
+    try {
+      this.ensureReady();
+    } catch (e) {
+    }
+  }
+  resumeIfSuspended() {
+    if (!this.ctx || this.ctx.state === "running") return;
+    resetGestureUnlock();
+    void this.ctx.resume().catch(() => {
+    });
   }
   close() {
     if (!this.ctx) return;
+    resetGestureUnlock();
     void this.ctx.close();
     this.ctx = null;
     this.masterGain = null;
@@ -713,7 +759,7 @@ var AudioEngine = class {
     if (this.convolverGain) this.convolverGain.gain.value = v;
   }
   createVoice(position, quantize = "none", presetId = 0) {
-    this.unlock();
+    this.ensureReady();
     return new Voice(this, position, quantize, presetId);
   }
   createVoiceRoute() {
@@ -798,7 +844,15 @@ function AudioEngineProvider({
 }) {
   const [engine] = (0, import_react3.useState)(() => new AudioEngine());
   (0, import_react3.useEffect)(() => {
+    var _a;
+    const w = window;
+    const prewarm = () => engine.prewarm();
+    const idle = (_a = w.requestIdleCallback) == null ? void 0 : _a.call(w, prewarm);
+    const timer = idle == null ? setTimeout(prewarm, 400) : void 0;
     return () => {
+      var _a2;
+      if (idle != null) (_a2 = w.cancelIdleCallback) == null ? void 0 : _a2.call(w, idle);
+      if (timer) clearTimeout(timer);
       engine.close();
     };
   }, [engine]);
@@ -908,7 +962,7 @@ var handleRemoteEvent = ({
   remoteRelease
 }) => {
   var _a, _b;
-  engine.unlock();
+  engine.ensureReady();
   if (type === "start") {
     (_a = remoteUsersRef[userId]) == null ? void 0 : _a.stop(remoteRelease);
     remoteUsersRef[userId] = engine.createVoice(
@@ -968,19 +1022,15 @@ function useAudioUnlock() {
       engine.unlock();
     };
     const onVisible = () => {
-      if (document.visibilityState === "visible") unlock();
+      if (document.visibilityState === "visible") engine.resumeIfSuspended();
     };
     document.addEventListener("touchstart", unlock, UNLOCK_OPTS);
-    document.addEventListener("touchend", unlock, UNLOCK_OPTS);
     document.addEventListener("pointerdown", unlock, UNLOCK_OPTS);
-    document.addEventListener("pointerup", unlock, UNLOCK_OPTS);
     document.addEventListener("click", unlock, UNLOCK_OPTS);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       document.removeEventListener("touchstart", unlock, UNLOCK_OPTS);
-      document.removeEventListener("touchend", unlock, UNLOCK_OPTS);
       document.removeEventListener("pointerdown", unlock, UNLOCK_OPTS);
-      document.removeEventListener("pointerup", unlock, UNLOCK_OPTS);
       document.removeEventListener("click", unlock, UNLOCK_OPTS);
       document.removeEventListener("visibilitychange", onVisible);
     };
@@ -1054,15 +1104,12 @@ var PASSIVE_CAPTURE = { capture: true, passive: true };
 var ACTIVE_CAPTURE = { capture: true, passive: false };
 function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
   const { emitMotion } = useWebSocket_default();
-  const engine = useAudioEngine();
   const { glowIntervalMs } = useChaospadConfig();
   const emitMotionRef = (0, import_react10.useRef)(emitMotion);
-  const engineRef = (0, import_react10.useRef)(engine);
   const sessionsRef = (0, import_react10.useRef)(/* @__PURE__ */ new Map());
   const suppressClickUntilRef = (0, import_react10.useRef)(0);
   const holdIntervalRef = (0, import_react10.useRef)(null);
   emitMotionRef.current = emitMotion;
-  engineRef.current = engine;
   (0, import_react10.useLayoutEffect)(() => {
     var _a;
     let scroll = null;
@@ -1147,7 +1194,6 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
     const emitHoldMove = () => {
       const session = sessionsRef.current.values().next().value;
       if (!session) return;
-      unlockAudio();
       emit(session.lastX, session.lastY, "move");
     };
     const startHoldHeartbeat = () => {
@@ -1178,11 +1224,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       sessionsRef.current.clear();
       stopHoldHeartbeat();
     };
-    const unlockAudio = () => {
-      engineRef.current.unlock();
-    };
     const onTouchStart = (e) => {
-      unlockAudio();
       stopMomentum();
       stopScrollGesture();
       if (!passThrough) return;
@@ -1213,7 +1255,6 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
     };
     const onPointerDown = (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
-      unlockAudio();
       sessionsRef.current.set(e.pointerId, {
         startX: e.clientX,
         startY: e.clientY,
@@ -1251,7 +1292,6 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
     };
     const onPointerUp = (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
-      unlockAudio();
       endSession(e.pointerId, e.clientX, e.clientY, e);
     };
     const onPointerCancel = (e) => {
@@ -1262,7 +1302,6 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
     };
     const onTouchMove = (e) => {
       if (sessionsRef.current.size === 0) return;
-      unlockAudio();
       const touch = e.touches[0];
       if (!touch) return;
       if (e.touches.length > 1) {
@@ -1288,7 +1327,6 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       }
     };
     const onTouchEnd = (e) => {
-      unlockAudio();
       if (scroll && e.touches.length === 0) {
         const { el, vx, vy } = scroll;
         const stale = e.timeStamp - scroll.lastAt > MOMENTUM_STALE_MS;
@@ -1716,10 +1754,10 @@ function burstMetrics(s, flow) {
 }
 
 // src/components/ChaosPad/webgl/flowSmooth.ts
-function smoothFlow(cache, key, dx, dy) {
+function smoothFlow(cache2, key, dx, dy) {
   var _a;
   const speed = Math.hypot(dx, dy);
-  const prev = (_a = cache.get(key)) != null ? _a : { x: 0, y: 0, speed: 0 };
+  const prev = (_a = cache2.get(key)) != null ? _a : { x: 0, y: 0, speed: 0 };
   let tx = prev.x;
   let ty = prev.y;
   if (speed > 0.02) {
@@ -1736,7 +1774,7 @@ function smoothFlow(cache, key, dx, dy) {
     flow.x /= mag;
     flow.y /= mag;
   }
-  cache.set(key, flow);
+  cache2.set(key, flow);
   return flow;
 }
 

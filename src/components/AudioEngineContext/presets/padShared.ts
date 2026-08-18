@@ -12,7 +12,19 @@ export type PadVoiceOptions = {
 	grainBrightLevel?: number
 }
 
-function createGrainBuffer(ctx: AudioContext, seconds = 2.4) {
+const grainBuffers = new Map<string, AudioBuffer>()
+
+function getGrainBuffer(ctx: AudioContext, seconds = 2.4) {
+	const key = `${ctx.sampleRate}:${seconds}`
+	const cached = grainBuffers.get(key)
+	if (cached) return cached
+
+	const buffer = createGrainBuffer(ctx, seconds)
+	grainBuffers.set(key, buffer)
+	return buffer
+}
+
+function createGrainBuffer(ctx: AudioContext, seconds: number) {
 	const len = Math.floor(ctx.sampleRate * seconds)
 	const buf = ctx.createBuffer(1, len, ctx.sampleRate)
 	const data = buf.getChannelData(0)
@@ -51,6 +63,7 @@ function addGrainLayer(
 	const node = ctx.createBufferSource()
 	node.buffer = source
 	node.loop = true
+	node.loopEnd = source.duration
 	const gain = ctx.createGain()
 	gain.gain.value = level
 	node.connect(filter)
@@ -138,7 +151,7 @@ export function createPadVoice(ctx: AudioContext, opts: PadVoiceOptions) {
 
 	tail.connect(out)
 
-	const grainBuffer = createGrainBuffer(ctx)
+	const grainBuffer = getGrainBuffer(ctx)
 	const grainBus = ctx.createGain()
 	grainBus.connect(out)
 
@@ -221,7 +234,9 @@ export function createPadVoice(ctx: AudioContext, opts: PadVoiceOptions) {
 		start(when: number) {
 			oscs.forEach(({ osc }) => osc.start(when))
 			lfos.forEach((lfo) => lfo.start(when))
-			grains.forEach(({ node }) => node.start(when))
+			grains.forEach(({ node }) =>
+				node.start(when, Math.random() * grainBuffer.duration),
+			)
 		},
 		stop(_release: number, when: number) {
 			const end = when + _release + 0.08

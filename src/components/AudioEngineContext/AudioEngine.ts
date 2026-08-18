@@ -1,5 +1,9 @@
 import { createImpulseResponse } from './helpers/createImpulseResponse'
-import { createAudioContext, unlockAudioForGesture } from './helpers/unlockAudioContext'
+import {
+	createAudioContext,
+	resetGestureUnlock,
+	unlockAudioForGesture,
+} from './helpers/unlockAudioContext'
 import type { QuantizeMode } from './helpers/quantizeFreq'
 import type { PresetId } from './presets/catalog'
 import { Voice } from './Voice'
@@ -24,17 +28,35 @@ export class AudioEngine {
 	private voiceRoutes: VoiceRoute[] = []
 
 	unlock(): AudioContext {
+		const ctx = this.ensureReady()
+		unlockAudioForGesture(ctx)
+		return ctx
+	}
+
+	ensureReady(): AudioContext {
 		if (!this.ctx) this.ctx = createAudioContext()
 		if (!this.graphReady) {
 			this.initGraph()
 			this.graphReady = true
 		}
-		unlockAudioForGesture(this.ctx)
 		return this.ctx
+	}
+
+	prewarm(): void {
+		try {
+			this.ensureReady()
+		} catch {}
+	}
+
+	resumeIfSuspended(): void {
+		if (!this.ctx || this.ctx.state === 'running') return
+		resetGestureUnlock()
+		void this.ctx.resume().catch(() => {})
 	}
 
 	close() {
 		if (!this.ctx) return
+		resetGestureUnlock()
 		void this.ctx.close()
 		this.ctx = null
 		this.masterGain = null
@@ -63,7 +85,7 @@ export class AudioEngine {
 		quantize: QuantizeMode = 'none',
 		presetId: PresetId = 0,
 	) {
-		this.unlock()
+		this.ensureReady()
 		return new Voice(this, position, quantize, presetId)
 	}
 

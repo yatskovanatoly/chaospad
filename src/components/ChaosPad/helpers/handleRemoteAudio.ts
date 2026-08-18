@@ -13,7 +13,7 @@ const handleRemoteEvent = ({
 	quantize,
 	remoteRelease,
 }: RemoteProps) => {
-	engine.unlock()
+	engine.ensureReady()
 
 	if (type === 'start') {
 		remoteUsersRef[userId]?.stop(remoteRelease)

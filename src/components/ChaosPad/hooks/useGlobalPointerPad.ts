@@ -1,4 +1,3 @@
-import { useAudioEngine } from '@/components/AudioEngineContext/useAudioEngine'
 import {
 	findScrollTarget,
 	scrollWithChaining,
@@ -47,16 +46,13 @@ export function useGlobalPointerPad(
 	passThrough: boolean,
 ) {
 	const { emitMotion } = useWebSocket()
-	const engine = useAudioEngine()
 	const { glowIntervalMs } = useChaospadConfig()
 	const emitMotionRef = useRef(emitMotion)
-	const engineRef = useRef(engine)
 	const sessionsRef = useRef(new Map<number, PointerSession>())
 	const suppressClickUntilRef = useRef(0)
 	const holdIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
 	emitMotionRef.current = emitMotion
-	engineRef.current = engine
 
 	useLayoutEffect(() => {
 		let scroll: ScrollGesture | null = null
@@ -158,7 +154,6 @@ export function useGlobalPointerPad(
 		const emitHoldMove = () => {
 			const session = sessionsRef.current.values().next().value
 			if (!session) return
-			unlockAudio()
 			emit(session.lastX, session.lastY, 'move')
 		}
 
@@ -202,12 +197,7 @@ export function useGlobalPointerPad(
 			stopHoldHeartbeat()
 		}
 
-		const unlockAudio = () => {
-			engineRef.current.unlock()
-		}
-
 		const onTouchStart = (e: TouchEvent) => {
-			unlockAudio()
 			stopMomentum()
 			stopScrollGesture()
 			if (!passThrough) return
@@ -246,8 +236,6 @@ export function useGlobalPointerPad(
 
 		const onPointerDown = (e: PointerEvent) => {
 			if (e.pointerType === 'mouse' && e.button !== 0) return
-
-			unlockAudio()
 
 			sessionsRef.current.set(e.pointerId, {
 				startX: e.clientX,
@@ -293,7 +281,6 @@ export function useGlobalPointerPad(
 
 		const onPointerUp = (e: PointerEvent) => {
 			if (e.pointerType === 'mouse' && e.button !== 0) return
-			unlockAudio()
 			endSession(e.pointerId, e.clientX, e.clientY, e)
 		}
 
@@ -306,8 +293,6 @@ export function useGlobalPointerPad(
 
 		const onTouchMove = (e: TouchEvent) => {
 			if (sessionsRef.current.size === 0) return
-
-			unlockAudio()
 
 			const touch = e.touches[0]
 			if (!touch) return
@@ -341,8 +326,6 @@ export function useGlobalPointerPad(
 		}
 
 		const onTouchEnd = (e: TouchEvent) => {
-			unlockAudio()
-
 			if (scroll && e.touches.length === 0) {
 				const { el, vx, vy } = scroll
 				const stale = e.timeStamp - scroll.lastAt > MOMENTUM_STALE_MS

@@ -12,7 +12,17 @@ export default function AudioEngineProvider({
 	const [engine] = useState(() => new AudioEngine())
 
 	useEffect(() => {
+		const w = window as Window & {
+			requestIdleCallback?: (cb: () => void) => number
+			cancelIdleCallback?: (handle: number) => void
+		}
+		const prewarm = () => engine.prewarm()
+		const idle = w.requestIdleCallback?.(prewarm)
+		const timer = idle == null ? setTimeout(prewarm, 400) : undefined
+
 		return () => {
+			if (idle != null) w.cancelIdleCallback?.(idle)
+			if (timer) clearTimeout(timer)
 			engine.close()
 		}
 	}, [engine])
