@@ -997,18 +997,21 @@ function findScrollTarget(clientX, clientY) {
 function scrollAxis(el, axis, delta) {
   const before = el[axis];
   el[axis] = before + delta;
-  return el[axis] !== before;
+  return el[axis] - before;
+}
+function canScrollAxis(el, axis, delta) {
+  if (delta === 0) return false;
+  const pos = el[axis];
+  const max = axis === "scrollTop" ? el.scrollHeight - el.clientHeight : el.scrollWidth - el.clientWidth;
+  return delta < 0 ? pos > 0.5 : pos < max - 0.5;
 }
 function scrollWithChaining(el, dx, dy) {
-  const movedX = dx !== 0 && scrollAxis(el, "scrollLeft", dx);
-  const movedY = dy !== 0 && scrollAxis(el, "scrollTop", dy);
-  let moved = movedX || movedY;
   const page = document.scrollingElement;
-  if (page && page !== el) {
-    if (dx !== 0 && !movedX) moved = scrollAxis(page, "scrollLeft", dx) || moved;
-    if (dy !== 0 && !movedY) moved = scrollAxis(page, "scrollTop", dy) || moved;
-  }
-  return moved;
+  const chain = (axis, delta) => !page || page === el || canScrollAxis(el, axis, delta) ? el : page;
+  return {
+    dx: dx !== 0 ? scrollAxis(chain("scrollLeft", dx), "scrollLeft", dx) : 0,
+    dy: dy !== 0 ? scrollAxis(chain("scrollTop", dy), "scrollTop", dy) : 0
+  };
 }
 
 // src/components/ChaosPad/hooks/useGlobalPointerPad.ts
@@ -1021,6 +1024,7 @@ var MOMENTUM_MIN_SPEED = 0.02;
 var MOMENTUM_MAX_SPEED = 4;
 var MOMENTUM_MAX_STEP_MS = 64;
 var MOMENTUM_STALE_MS = 100;
+var SUBPIXEL_CARRY_PX = 1;
 var PASSIVE_CAPTURE = { capture: true, passive: true };
 var ACTIVE_CAPTURE = { capture: true, passive: false };
 function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
@@ -1038,6 +1042,9 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
     var _a;
     let scroll = null;
     let momentumRaf = 0;
+    let scrollRaf = 0;
+    let pendingX = 0;
+    let pendingY = 0;
     const stopHoldHeartbeat = () => {
       if (holdIntervalRef.current == null) return;
       clearInterval(holdIntervalRef.current);
@@ -1048,6 +1055,30 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       cancelAnimationFrame(momentumRaf);
       momentumRaf = 0;
     };
+    const carry = (requested, applied) => Math.abs(requested - applied) < SUBPIXEL_CARRY_PX ? requested - applied : 0;
+    const flushScroll = () => {
+      scrollRaf = 0;
+      const dx = pendingX;
+      const dy = pendingY;
+      pendingX = 0;
+      pendingY = 0;
+      if (!scroll || dx === 0 && dy === 0) return;
+      const applied = scrollWithChaining(scroll.el, dx, dy);
+      pendingX += carry(dx, applied.dx);
+      pendingY += carry(dy, applied.dy);
+    };
+    const queueScroll = (dx, dy) => {
+      pendingX += dx;
+      pendingY += dy;
+      if (!scrollRaf) scrollRaf = requestAnimationFrame(flushScroll);
+    };
+    const stopScrollGesture = () => {
+      if (scrollRaf) cancelAnimationFrame(scrollRaf);
+      scrollRaf = 0;
+      pendingX = 0;
+      pendingY = 0;
+      scroll = null;
+    };
     const startMomentum = (el, vx, vy) => {
       stopMomentum();
       const speed = Math.hypot(vx, vy);
@@ -1055,15 +1086,22 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       const scale = speed > MOMENTUM_MAX_SPEED ? MOMENTUM_MAX_SPEED / speed : 1;
       let mx = vx * scale;
       let my = vy * scale;
+      let restX = 0;
+      let restY = 0;
       let last = performance.now();
       const step = (now) => {
         const dt = Math.min(Math.max(now - last, 1), MOMENTUM_MAX_STEP_MS);
         last = now;
-        const moved = scrollWithChaining(el, mx * dt, my * dt);
+        const wantX = mx * dt + restX;
+        const wantY = my * dt + restY;
+        const applied = scrollWithChaining(el, wantX, wantY);
+        restX = carry(wantX, applied.dx);
+        restY = carry(wantY, applied.dy);
         const decay = MOMENTUM_DECAY_PER_MS ** dt;
         mx *= decay;
         my *= decay;
-        if (!moved || Math.hypot(mx, my) < MOMENTUM_MIN_SPEED) {
+        const stalled = applied.dx === 0 && applied.dy === 0 && restX === 0 && restY === 0;
+        if (stalled || Math.hypot(mx, my) < MOMENTUM_MIN_SPEED) {
           momentumRaf = 0;
           return;
         }
@@ -1121,7 +1159,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
     const onTouchStart = (e) => {
       unlockAudio();
       stopMomentum();
-      scroll = null;
+      stopScrollGesture();
       if (!passThrough) return;
       const touch = e.touches[0];
       if (!touch || e.touches.length > 1) return;
@@ -1144,7 +1182,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       scroll.lastX = touch.clientX;
       scroll.lastY = touch.clientY;
       scroll.lastAt = at;
-      scrollWithChaining(scroll.el, dx, dy);
+      queueScroll(dx, dy);
       scroll.vx += (dx / dt - scroll.vx) * VELOCITY_SMOOTH;
       scroll.vy += (dy / dt - scroll.vy) * VELOCITY_SMOOTH;
     };
@@ -1203,7 +1241,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       const touch = e.touches[0];
       if (!touch) return;
       if (e.touches.length > 1) {
-        scroll = null;
+        stopScrollGesture();
         return;
       }
       const firstEntry = sessionsRef.current.entries().next();
@@ -1227,16 +1265,18 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
     const onTouchEnd = (e) => {
       unlockAudio();
       if (scroll && e.touches.length === 0) {
+        const { el, vx, vy } = scroll;
         const stale = e.timeStamp - scroll.lastAt > MOMENTUM_STALE_MS;
-        if (!stale) startMomentum(scroll.el, scroll.vx, scroll.vy);
-        scroll = null;
+        flushScroll();
+        stopScrollGesture();
+        if (!stale) startMomentum(el, vx, vy);
       }
       if (sessionsRef.current.size === 0) return;
       if (e.touches.length > 0) return;
       endAllSessions(e);
     };
     const onTouchCancel = (e) => {
-      scroll = null;
+      stopScrollGesture();
       if (sessionsRef.current.size === 0) return;
       endAllSessions(e);
     };
@@ -1277,6 +1317,7 @@ function useGlobalPointerPad(rootRef, surfaceRef, passThrough) {
       sessionsRef.current.clear();
       stopHoldHeartbeat();
       stopMomentum();
+      stopScrollGesture();
     };
   }, [passThrough, rootRef, surfaceRef, glowIntervalMs]);
 }

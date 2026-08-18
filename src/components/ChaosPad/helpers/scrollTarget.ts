@@ -51,26 +51,37 @@ export function findScrollTarget(
 
 type Axis = 'scrollTop' | 'scrollLeft'
 
-function scrollAxis(el: Element, axis: Axis, delta: number): boolean {
+export type ScrollDelta = { dx: number; dy: number }
+
+function scrollAxis(el: Element, axis: Axis, delta: number): number {
 	const before = el[axis]
 	el[axis] = before + delta
-	return el[axis] !== before
+	return el[axis] - before
+}
+
+function canScrollAxis(el: Element, axis: Axis, delta: number): boolean {
+	if (delta === 0) return false
+
+	const pos = el[axis]
+	const max =
+		axis === 'scrollTop'
+			? el.scrollHeight - el.clientHeight
+			: el.scrollWidth - el.clientWidth
+
+	return delta < 0 ? pos > 0.5 : pos < max - 0.5
 }
 
 export function scrollWithChaining(
 	el: Element,
 	dx: number,
 	dy: number,
-): boolean {
-	const movedX = dx !== 0 && scrollAxis(el, 'scrollLeft', dx)
-	const movedY = dy !== 0 && scrollAxis(el, 'scrollTop', dy)
-	let moved = movedX || movedY
-
+): ScrollDelta {
 	const page = document.scrollingElement
-	if (page && page !== el) {
-		if (dx !== 0 && !movedX) moved = scrollAxis(page, 'scrollLeft', dx) || moved
-		if (dy !== 0 && !movedY) moved = scrollAxis(page, 'scrollTop', dy) || moved
-	}
+	const chain = (axis: Axis, delta: number) =>
+		!page || page === el || canScrollAxis(el, axis, delta) ? el : page
 
-	return moved
+	return {
+		dx: dx !== 0 ? scrollAxis(chain('scrollLeft', dx), 'scrollLeft', dx) : 0,
+		dy: dy !== 0 ? scrollAxis(chain('scrollTop', dy), 'scrollTop', dy) : 0,
+	}
 }

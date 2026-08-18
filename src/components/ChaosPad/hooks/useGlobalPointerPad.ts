@@ -18,6 +18,7 @@ const MOMENTUM_MIN_SPEED = 0.02
 const MOMENTUM_MAX_SPEED = 4
 const MOMENTUM_MAX_STEP_MS = 64
 const MOMENTUM_STALE_MS = 100
+const SUBPIXEL_CARRY_PX = 1
 
 const PASSIVE_CAPTURE = { capture: true, passive: true } as const
 const ACTIVE_CAPTURE = { capture: true, passive: false } as const
@@ -60,6 +61,9 @@ export function useGlobalPointerPad(
 	useLayoutEffect(() => {
 		let scroll: ScrollGesture | null = null
 		let momentumRaf = 0
+		let scrollRaf = 0
+		let pendingX = 0
+		let pendingY = 0
 
 		const stopHoldHeartbeat = () => {
 			if (holdIntervalRef.current == null) return
@@ -73,6 +77,36 @@ export function useGlobalPointerPad(
 			momentumRaf = 0
 		}
 
+		const carry = (requested: number, applied: number) =>
+			Math.abs(requested - applied) < SUBPIXEL_CARRY_PX ? requested - applied : 0
+
+		const flushScroll = () => {
+			scrollRaf = 0
+			const dx = pendingX
+			const dy = pendingY
+			pendingX = 0
+			pendingY = 0
+			if (!scroll || (dx === 0 && dy === 0)) return
+
+			const applied = scrollWithChaining(scroll.el, dx, dy)
+			pendingX += carry(dx, applied.dx)
+			pendingY += carry(dy, applied.dy)
+		}
+
+		const queueScroll = (dx: number, dy: number) => {
+			pendingX += dx
+			pendingY += dy
+			if (!scrollRaf) scrollRaf = requestAnimationFrame(flushScroll)
+		}
+
+		const stopScrollGesture = () => {
+			if (scrollRaf) cancelAnimationFrame(scrollRaf)
+			scrollRaf = 0
+			pendingX = 0
+			pendingY = 0
+			scroll = null
+		}
+
 		const startMomentum = (el: Element, vx: number, vy: number) => {
 			stopMomentum()
 			const speed = Math.hypot(vx, vy)
@@ -81,18 +115,27 @@ export function useGlobalPointerPad(
 			const scale = speed > MOMENTUM_MAX_SPEED ? MOMENTUM_MAX_SPEED / speed : 1
 			let mx = vx * scale
 			let my = vy * scale
+			let restX = 0
+			let restY = 0
 			let last = performance.now()
 
 			const step = (now: number) => {
 				const dt = Math.min(Math.max(now - last, 1), MOMENTUM_MAX_STEP_MS)
 				last = now
 
-				const moved = scrollWithChaining(el, mx * dt, my * dt)
+				const wantX = mx * dt + restX
+				const wantY = my * dt + restY
+				const applied = scrollWithChaining(el, wantX, wantY)
+				restX = carry(wantX, applied.dx)
+				restY = carry(wantY, applied.dy)
+
 				const decay = MOMENTUM_DECAY_PER_MS ** dt
 				mx *= decay
 				my *= decay
 
-				if (!moved || Math.hypot(mx, my) < MOMENTUM_MIN_SPEED) {
+				const stalled =
+					applied.dx === 0 && applied.dy === 0 && restX === 0 && restY === 0
+				if (stalled || Math.hypot(mx, my) < MOMENTUM_MIN_SPEED) {
 					momentumRaf = 0
 					return
 				}
@@ -166,7 +209,7 @@ export function useGlobalPointerPad(
 		const onTouchStart = (e: TouchEvent) => {
 			unlockAudio()
 			stopMomentum()
-			scroll = null
+			stopScrollGesture()
 			if (!passThrough) return
 
 			const touch = e.touches[0]
@@ -195,7 +238,7 @@ export function useGlobalPointerPad(
 			scroll.lastX = touch.clientX
 			scroll.lastY = touch.clientY
 			scroll.lastAt = at
-			scrollWithChaining(scroll.el, dx, dy)
+			queueScroll(dx, dy)
 
 			scroll.vx += (dx / dt - scroll.vx) * VELOCITY_SMOOTH
 			scroll.vy += (dy / dt - scroll.vy) * VELOCITY_SMOOTH
@@ -270,7 +313,7 @@ export function useGlobalPointerPad(
 			if (!touch) return
 
 			if (e.touches.length > 1) {
-				scroll = null
+				stopScrollGesture()
 				return
 			}
 
@@ -301,9 +344,11 @@ export function useGlobalPointerPad(
 			unlockAudio()
 
 			if (scroll && e.touches.length === 0) {
+				const { el, vx, vy } = scroll
 				const stale = e.timeStamp - scroll.lastAt > MOMENTUM_STALE_MS
-				if (!stale) startMomentum(scroll.el, scroll.vx, scroll.vy)
-				scroll = null
+				flushScroll()
+				stopScrollGesture()
+				if (!stale) startMomentum(el, vx, vy)
 			}
 
 			if (sessionsRef.current.size === 0) return
@@ -312,7 +357,7 @@ export function useGlobalPointerPad(
 		}
 
 		const onTouchCancel = (e: TouchEvent) => {
-			scroll = null
+			stopScrollGesture()
 			if (sessionsRef.current.size === 0) return
 			endAllSessions(e)
 		}
@@ -366,6 +411,7 @@ export function useGlobalPointerPad(
 			sessionsRef.current.clear()
 			stopHoldHeartbeat()
 			stopMomentum()
+			stopScrollGesture()
 		}
 	}, [passThrough, rootRef, surfaceRef, glowIntervalMs])
 }
